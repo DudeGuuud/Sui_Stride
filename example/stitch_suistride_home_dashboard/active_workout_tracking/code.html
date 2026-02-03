@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#0dccf2",
+                        "background-light": "#f5f8f8",
+                        "background-dark": "#101f22",
+                        "accent-teal": "#224249",
+                    },
+                    fontFamily: {
+                        "display": ["Space Grotesk", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .glass-button {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .wave-bg {
+            background: linear-gradient(180deg, #101f22 0%, #152e33 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        .wave-bg::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 50% -20%, rgba(13, 204, 242, 0.15) 0%, transparent 70%);
+            pointer-events: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display text-white">
+<div class="relative flex min-h-screen w-full flex-col max-w-[430px] mx-auto overflow-hidden wave-bg shadow-2xl">
+<header class="flex items-center p-6 pb-2 justify-between z-10">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">sensors</span>
+<span class="text-xs font-bold tracking-widest uppercase text-primary/80">Sui Mainnet</span>
+</div>
+<h2 class="text-white text-sm font-bold leading-tight tracking-[0.2em] uppercase opacity-60">SuiStride</h2>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-white text-[20px]">signal_cellular_4_bar</span>
+<span class="material-symbols-outlined text-white text-[20px]">battery_charging_full</span>
+</div>
+</header>
+<main class="flex-1 flex flex-col pt-4">
+<div class="px-6 flex flex-col items-center">
+<p class="text-primary font-bold text-sm tracking-[0.3em] uppercase mb-1">Total Distance</p>
+<h1 class="text-white tracking-tighter text-[84px] font-bold leading-none mb-2">5.42</h1>
+<p class="text-white/60 text-xl font-medium">Kilometers</p>
+</div>
+<div class="mt-8 px-4 flex-1">
+<div class="relative w-full h-[320px] rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
+<div class="absolute inset-0 bg-center bg-no-repeat bg-cover grayscale opacity-40" data-location="San Francisco Coastline" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDn2GBy1G6W1HpHdHYHT4P43N3WP5sn0cYRt7Hz1NNl67oj0vQVB1yFXEwqunrUwyHAwOchyZzIoOtykhc6NJ1wCJOs9vvEcplqhArjDa7gp2SsyZ_Ht8TFXmhUStDIVMjseK9keTa2-IJmmDkEhdjiOw-IuTu0sYNTzhVRC1uY-WScY6uTHO5UNXYr-J2fid2yB2a8biAPzd0RByTpglFwAyCEuSKfDqDul-mmwG8tlMt0oeW3e3c0jXE-Dv-K4qJ7PwEzIfG738j6");'>
+</div>
+<!-- Neon Path Simulation -->
+<div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+<svg class="w-full h-full" viewbox="0 0 200 200">
+<path class="drop-shadow-[0_0_8px_rgba(13,204,242,0.8)]" d="M40,160 Q80,140 100,100 T160,40" fill="none" stroke="#0dccf2" stroke-linecap="round" stroke-width="4"></path>
+<circle class="animate-pulse" cx="160" cy="40" fill="#0dccf2" r="6"></circle>
+</svg>
+</div>
+<!-- Map Overlay Controls -->
+<div class="absolute bottom-4 right-4 flex flex-col gap-2">
+<div class="w-10 h-10 rounded-full glass-button flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-sm">my_location</span>
+</div>
+<div class="w-10 h-10 rounded-full glass-button flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-sm">layers</span>
+</div>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4 p-6">
+<div class="flex flex-col gap-1 rounded-2xl p-5 bg-accent-teal/40 border border-white/5">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-primary text-lg">speed</span>
+<p class="text-white/50 text-xs font-bold uppercase tracking-wider">Avg Pace</p>
+</div>
+<p class="text-white tracking-tight text-3xl font-bold">5'12"</p>
+</div>
+<div class="flex flex-col gap-1 rounded-2xl p-5 bg-accent-teal/40 border border-white/5">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-primary text-lg">timer</span>
+<p class="text-white/50 text-xs font-bold uppercase tracking-wider">Duration</p>
+</div>
+<p class="text-white tracking-tight text-3xl font-bold">00:28:15</p>
+</div>
+<div class="flex flex-col gap-1 rounded-2xl p-5 bg-accent-teal/40 border border-white/5">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-primary text-lg">local_fire_department</span>
+<p class="text-white/50 text-xs font-bold uppercase tracking-wider">Calories</p>
+</div>
+<p class="text-white tracking-tight text-3xl font-bold">428</p>
+</div>
+<div class="flex flex-col gap-1 rounded-2xl p-5 bg-accent-teal/40 border border-white/5">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-primary text-lg">token</span>
+<p class="text-white/50 text-xs font-bold uppercase tracking-wider">SUI Earned</p>
+</div>
+<p class="text-white tracking-tight text-3xl font-bold">12.4</p>
+</div>
+</div>
+</main>
+<footer class="p-6 pt-0 pb-10 flex flex-col gap-4">
+<div class="flex justify-between items-center px-2">
+<button class="w-14 h-14 rounded-full bg-accent-teal/60 flex items-center justify-center border border-white/10">
+<span class="material-symbols-outlined text-white text-2xl">pause</span>
+</button>
+<button class="w-14 h-14 rounded-full bg-accent-teal/60 flex items-center justify-center border border-white/10">
+<span class="material-symbols-outlined text-white text-2xl">camera_alt</span>
+</button>
+<button class="w-14 h-14 rounded-full bg-accent-teal/60 flex items-center justify-center border border-white/10">
+<span class="material-symbols-outlined text-white text-2xl">music_note</span>
+</button>
+</div>
+<button class="w-full py-5 rounded-2xl glass-button text-white text-xl font-bold tracking-tight shadow-[0_0_30px_rgba(13,204,242,0.15)] active:scale-95 transition-all">
+                End Workout
+            </button>
+<div class="flex justify-center gap-1 mt-2">
+<div class="h-1 w-8 rounded-full bg-primary"></div>
+<div class="h-1 w-2 rounded-full bg-white/20"></div>
+<div class="h-1 w-2 rounded-full bg-white/20"></div>
+</div>
+</footer>
+<div class="absolute bottom-0 left-0 right-0 h-1 bg-primary/20"></div>
+</div>
+</body></html>
