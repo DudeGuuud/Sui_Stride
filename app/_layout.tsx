@@ -18,11 +18,28 @@ export default function RootLayout() {
     setColorScheme('dark');
   }, [setColorScheme]);
 
+  const customTheme = {
+    ...DarkTheme,
+    colors: {
+      ...DarkTheme.colors,
+      background: '#0A0E12',
+      card: '#1A1F24',
+      border: '#1A1F24',
+      primary: '#00E5FF',
+    },
+  };
+
   return (
-    <View className="flex-1 dark">
-      <ThemeProvider value={DarkTheme}>
-        <Stack>
+    <View className="flex-1 dark" style={{ backgroundColor: '#0A0E12' }}>
+      <ThemeProvider value={customTheme}>
+        <Stack screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: '#0A0E12' },
+          animation: 'fade_from_bottom',
+          animationDuration: 400,
+        }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="workout/tracking" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
         <StatusBar style="light" />

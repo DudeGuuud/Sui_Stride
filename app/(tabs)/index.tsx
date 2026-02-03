@@ -15,8 +15,12 @@ export default function HomeDashboard() {
                 {/* Header */}
                 <View className="flex-row justify-between items-center py-4">
                     <View className="flex-row items-center gap-2">
-                        <View className="w-10 h-10 rounded-full bg-primary items-center justify-center">
-                            <Footprints size={20} color="#0A0E12" />
+                        <View className="w-10 h-10 rounded-xl bg-card items-center justify-center overflow-hidden border border-border">
+                            <Image
+                                source={require('@/assets/images/logo.png')}
+                                className="w-full h-full"
+                                resizeMode="cover"
+                            />
                         </View>
                         <View>
                             <Text className="text-foreground font-bold text-lg">SuiStride</Text>

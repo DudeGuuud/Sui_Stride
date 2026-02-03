@@ -1,12 +1,13 @@
 {
   "expo": {
-    "name": "Sui_Sports",
-    "slug": "Sui_Sports",
+    "name": "SuiStride",
+    "slug": "suistride",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "suisports",
+    "icon": "./assets/images/logo.png",
+    "scheme": "suistride",
     "userInterfaceStyle": "dark",
+    "backgroundColor": "#0A0E12",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
@@ -14,7 +15,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "foregroundImage": "./assets/images/logo.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
@@ -42,7 +43,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": false
     }
   }
 }
