@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { Activity, ChevronRight, Coins, Trophy, Users, X } from 'lucide-react-native';
+import { Activity as ActivityIcon, ChevronRight, Coins, Trophy, Users, X } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Button } from './ui/button';
@@ -80,7 +80,7 @@ export function CreatePoolModal({ isVisible, onClose }: CreatePoolModalProps) {
                                                         : "bg-background border-border"
                                                 )}
                                             >
-                                                <Activity size={18} color={activity === type ? "#00E5FF" : "#94A3B8"} />
+                                                <ActivityIcon size={18} color={activity === type ? "#00E5FF" : "#94A3B8"} />
                                                 <Text className={cn(
                                                     "font-bold",
                                                     activity === type ? "text-primary" : "text-muted-foreground"

@@ -44,6 +44,6 @@ export default function RootLayout() {
         </Stack>
         <StatusBar style="light" />
       </ThemeProvider>
-    </View>
+    </View >
   );
 }

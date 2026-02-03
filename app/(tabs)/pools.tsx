@@ -3,13 +3,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { router } from 'expo-router';
-import { Activity, ChevronLeft, Clock, Coins, HelpCircle, Plus, Users } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Activity as ActivityIcon, ChevronLeft, Clock, Coins, HelpCircle, Plus, Users } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { Image, ImageBackground, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function PoolsScreen() {
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState('Global');
     const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
 
@@ -174,7 +175,7 @@ export default function PoolsScreen() {
                                                 </View>
                                                 <View className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-background border border-border items-center justify-center">
                                                     {challenge.status === 'ACTIVE' ? (
-                                                        <Activity size={12} color="#1DE9B6" />
+                                                        <ActivityIcon size={12} color="#1DE9B6" />
                                                     ) : (
                                                         <Clock size={12} color="#94A3B8" />
                                                     )}
