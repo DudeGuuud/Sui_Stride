@@ -3,9 +3,11 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import { useEffect } from 'react';
-import { View } from 'react-native';
+import { LogBox, View } from 'react-native';
 import 'react-native-reanimated';
 import './global.css';
+
+LogBox.ignoreLogs(['[Reanimated] Reading from `value` during component render']);
 
 export const unstable_settings = {
   anchor: '(tabs)',
