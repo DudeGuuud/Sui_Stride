@@ -6,6 +6,7 @@ export type LocationPoint = {
     longitude: number;
     timestamp: number;
     speed: number | null;
+    accuracy: number | null;
 };
 
 export function useLocationTracking(isActive: boolean) {
@@ -41,26 +42,47 @@ export function useLocationTracking(isActive: boolean) {
 
             subscription = await Location.watchPositionAsync(
                 {
-                    accuracy: Location.Accuracy.Balanced,
-                    timeInterval: 5000,
-                    distanceInterval: 10,
+                    accuracy: Location.Accuracy.BestForNavigation,
+                    timeInterval: 1000,
+                    distanceInterval: 1,
                 },
                 (newLocation) => {
+                    const { accuracy, latitude, longitude, speed } = newLocation.coords;
+
+                    // Filter 1: Reject garbage data (low accuracy)
+                    // If accuracy is worse than 20 meters, it's just noise.
+                    if (accuracy && accuracy > 20) {
+                        return;
+                    }
+
                     const point: LocationPoint = {
-                        latitude: newLocation.coords.latitude,
-                        longitude: newLocation.coords.longitude,
+                        latitude,
+                        longitude,
                         timestamp: newLocation.timestamp,
-                        speed: newLocation.coords.speed,
+                        speed,
+                        accuracy,
                     };
 
-                    setLocation(point);
                     setPath((currentPath) => {
                         if (currentPath.length > 0) {
                             const lastPoint = currentPath[currentPath.length - 1];
-                            const d = calculateDistance(lastPoint, point);
-                            setDistance((prev) => prev + d);
+                            const dist = calculateDistance(lastPoint, point);
+
+                            // Filter 2: Stationary Drift (Minimal movement)
+                            // If we moved less than 2 meters, assume we are standing still
+                            // and this is just GPS jitter.
+                            if (dist < 2) {
+                                return currentPath;
+                            }
+
+                            setDistance((prev) => prev + dist);
+                            setLocation(point); // Only update current location if we actually moved
+                            return [...currentPath, point];
                         }
-                        return [...currentPath, point];
+
+                        // First point
+                        setLocation(point);
+                        return [point];
                     });
                 }
             );

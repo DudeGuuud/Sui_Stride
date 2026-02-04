@@ -7,18 +7,19 @@ const Progress = React.forwardRef<
     View,
     React.ComponentPropsWithoutRef<typeof View> & { value?: number }
 >(({ className, value, ...props }, ref) => {
-    const progress = useSharedValue(-100);
+    const progress = useSharedValue(0);
 
     React.useEffect(() => {
-        progress.value = withSpring(-100 + (value || 0), {
+        const targetValue = Math.min(Math.max(value || 0, 0), 100);
+        progress.value = withSpring(targetValue, {
             damping: 20,
             stiffness: 90,
         });
-    }, [value, progress]);
+    }, [value]);
 
     const animatedStyle = useAnimatedStyle(() => {
         return {
-            transform: [{ translateX: progress.value }],
+            width: `${progress.value}%`,
         };
     });
 
@@ -32,7 +33,7 @@ const Progress = React.forwardRef<
             {...props}
         >
             <Animated.View
-                className="h-full w-full flex-1 bg-primary"
+                className="h-full bg-primary"
                 style={animatedStyle}
             />
         </View>

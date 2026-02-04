@@ -7,11 +7,14 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import MapView, { Polyline } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import mapStyle from '@/constants/map-style.json';
 
 export default function WorkoutTrackingScreen() {
     const [isTracking, setIsTracking] = useState(true);
     const { location, path, distance, errorMsg } = useLocationTracking(isTracking);
     const [elapsedTime, setElapsedTime] = useState(0);
+    const [calories, setCalories] = useState(0);
+    const weightKg = 70; // User weight (default 70kg)
 
     useEffect(() => {
         let interval: any;
@@ -23,6 +26,39 @@ export default function WorkoutTrackingScreen() {
         return () => clearInterval(interval);
     }, [isTracking]);
 
+    // Calculate Calories based on speed and time (ACSM Metabolic Equation)
+    // Run this effect whenever location updates (every 1s roughly)
+    useEffect(() => {
+        if (!isTracking || !location) return;
+
+        const speedMetersPerSec = location.speed || 0;
+        const speedMetersPerMin = speedMetersPerSec * 60;
+
+        // ACSM Formula for Running: VO2 (ml/kg/min) = 0.2 * speed(m/min) + 0.9 * speed(m/min) * grade + 3.5
+        // We assume 0 grade for now.
+        // VO2 = 0.2 * speedMetersPerMin + 3.5
+        // Calories/min = (VO2 * weightKg) / 200
+        // Calories/sec = Calories/min / 60
+
+        // If speed is very low (< 0.8 m/s ~ 3 km/h), use Walking formula:
+        // VO2 = 0.1 * speed(m/min) + 3.5
+        let vo2 = 0;
+        if (speedMetersPerSec < 0.8) {
+             vo2 = 0.1 * speedMetersPerMin + 3.5;
+        } else {
+             vo2 = 0.2 * speedMetersPerMin + 3.5;
+        }
+
+        const kcalPerMin = (vo2 * weightKg) / 200;
+        const kcalPerSec = kcalPerMin / 60;
+
+        // Since location updates roughly every 1s, we add 1s worth of calories
+        // But better to use the actual time difference if we had it.
+        // For simplicity and "Linus" robustness, assuming 1s tick is fine given our 1s GPS update rate.
+        setCalories(c => c + kcalPerSec);
+
+    }, [location, isTracking]);
+
     const formatTime = (seconds: number) => {
         const hrs = Math.floor(seconds / 3600);
         const mins = Math.floor((seconds % 3600) / 60);
@@ -30,7 +66,7 @@ export default function WorkoutTrackingScreen() {
         return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
-    const formatPace = () => {
+    const formatAvgPace = () => {
         if (distance === 0) return "0'00\"";
         const paceInSeconds = elapsedTime / (distance / 1000);
         const mins = Math.floor(paceInSeconds / 60);
@@ -38,10 +74,18 @@ export default function WorkoutTrackingScreen() {
         return `${mins}'${secs.toString().padStart(2, '0')}"`;
     };
 
-    const calculateCalories = () => {
-        // Simple MET calculation: MET * Weight (fixed at 70kg for now) * Time (hours)
-        // Running at 8km/h is ~8 MET
-        return Math.floor((8.0 * 70 * (elapsedTime / 3600)));
+    const formatCurrentPace = () => {
+        const speed = location?.speed || 0; // m/s
+        if (speed < 0.1) return "-'--\""; // Stationary
+
+        const paceSecondsPerKm = 1000 / speed;
+        const mins = Math.floor(paceSecondsPerKm / 60);
+        const secs = Math.floor(paceSecondsPerKm % 60);
+        
+        // Cap at 30:00 pace to avoid ugly numbers when walking very slowly
+        if (mins > 30) return "-'--\"";
+
+        return `${mins}'${secs.toString().padStart(2, '0')}"`;
     };
 
     return (
@@ -69,6 +113,10 @@ export default function WorkoutTrackingScreen() {
                 <View className="relative w-full h-80 rounded-3xl bg-card border border-border overflow-hidden mb-8">
                     <MapView
                         style={{ flex: 1 }}
+                        customMapStyle={mapStyle}
+                        loadingBackgroundColor="#0A0E12"
+                        loadingEnabled
+                        toolbarEnabled={false}
                         initialRegion={{
                             latitude: location?.latitude || 37.7749,
                             longitude: location?.longitude || -122.4194,
@@ -114,10 +162,10 @@ export default function WorkoutTrackingScreen() {
                     <Card className="w-[47%] bg-card border-none">
                         <CardContent className="p-5">
                             <View className="flex-row items-center gap-2 mb-3">
-                                <Gauge size={16} color="#00E5FF" />
+                                <Target size={16} color="#00E5FF" />
                                 <Text className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider">Avg Pace</Text>
                             </View>
-                            <Text className="text-foreground text-2xl font-bold">{formatPace()}</Text>
+                            <Text className="text-foreground text-2xl font-bold">{formatAvgPace()}</Text>
                         </CardContent>
                     </Card>
 
@@ -137,17 +185,17 @@ export default function WorkoutTrackingScreen() {
                                 <Flame size={16} color="#00E5FF" />
                                 <Text className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider">Calories</Text>
                             </View>
-                            <Text className="text-foreground text-2xl font-bold">{calculateCalories()}</Text>
+                            <Text className="text-foreground text-2xl font-bold">{calories.toFixed(0)}</Text>
                         </CardContent>
                     </Card>
 
                     <Card className="w-[47%] bg-card border-none">
                         <CardContent className="p-5">
                             <View className="flex-row items-center gap-2 mb-3">
-                                <Box size={16} color="#00E5FF" />
-                                <Text className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider">SUI Earned</Text>
+                                <Gauge size={16} color="#00E5FF" />
+                                <Text className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider">Current Pace</Text>
                             </View>
-                            <Text className="text-foreground text-2xl font-bold">{(distance / 500).toFixed(1)}</Text>
+                            <Text className="text-foreground text-2xl font-bold">{formatCurrentPace()}</Text>
                         </CardContent>
                     </Card>
                 </View>
