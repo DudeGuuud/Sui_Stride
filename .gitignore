@@ -17,6 +17,8 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+app.config.js
+package-lock.json
 
 # Metro
 .metro-health-check*
@@ -41,3 +43,4 @@ app-example
 # generated native folders
 /ios
 /android
+app.config*

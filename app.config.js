@@ -15,6 +15,7 @@ export default {
         newArchEnabled: true,
         ios: {
             supportsTablet: true,
+            bundleIdentifier: "com.anonymous.suistride",
             infoPlist: {
                 NSLocationWhenInUseUsageDescription: "SuiStride needs access to your location to track your runs.",
                 NSLocationAlwaysAndWhenInUseUsageDescription: "SuiStride needs access to your location in the background to track your runs.",
@@ -43,8 +44,10 @@ export default {
                 "FOREGROUND_SERVICE_LOCATION"
             ]
         },
-        ios: {
-            bundleIdentifier: "com.anonymous.suistride"
+        extra: {
+            eas: {
+                projectId: "b147dca0-b00b-4c91-9178-e4d2068abfd5"
+            }
         },
         web: {
             output: "static",
