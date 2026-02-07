@@ -6,7 +6,6 @@ import { Flame, Footprints, MapPin, Play, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { cn } from "@/lib/utils";
 
 export default function HomeDashboard() {
   return (

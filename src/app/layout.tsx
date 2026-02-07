@@ -2,11 +2,18 @@ import type { Metadata } from "next";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
 import { Providers } from "./providers";
+import BottomNav from "@/components/bottom-nav";
 
 export const metadata: Metadata = {
   title: "SuiStride",
   description: "Next-Gen Fitness App on Sui",
-  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -17,7 +24,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="antialiased min-h-screen bg-background text-foreground">
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          <BottomNav />
+        </Providers>
       </body>
     </html>
   );

@@ -4,19 +4,29 @@ import { useRouter } from 'next/navigation';
 
 interface AuthContextType {
     signIn: () => void;
+    signInWithGoogle: () => Promise<void>;
     signOut: () => void;
-    user: any | null;
+    user: { name: string } | null;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState<any | null>(null);
+    const [user, setUser] = useState<{ name: string } | null>(null);
     const router = useRouter();
 
     const signIn = () => {
-        setUser({ name: 'User' });
-        router.push('/dashboard');
+        // Mock login
+        setUser({ name: 'Mock User' });
+        router.push('/');
+    };
+
+    const signInWithGoogle = async () => {
+        // Mock Google login behavior
+        console.log("Mock Google Login initiated");
+        setTimeout(() => {
+            signIn();
+        }, 1000);
     };
 
     const signOut = () => {
@@ -25,7 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ signIn, signOut, user }}>
+        <AuthContext.Provider value={{ signIn, signInWithGoogle, signOut, user }}>
             {children}
         </AuthContext.Provider>
     );

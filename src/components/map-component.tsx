@@ -8,6 +8,7 @@ import { LocationPoint } from "@/hooks/use-native-location";
 
 // Fix for default marker icon in Leaflet with Next.js/Webpack
 // though we use CircleMarker so might not need it, but good safety.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: '/images/marker-icon-2x.png',

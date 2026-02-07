@@ -3,13 +3,11 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Chrome, Github, Lock, Mail, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/auth";
-import { cn } from "@/lib/utils";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -27,18 +25,23 @@ const itemVariants = {
 } as const;
 
 export default function LoginPage() {
-  const { signIn } = useAuth();
+  const { signIn, signInWithGoogle } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
 
-  const handleLogin = async (provider: string) => {
+  const handleLogin = async (provider?: string) => {
+    console.log(`Logging in with ${provider || "email"}`);
     setIsLoading(true);
+
+    if (provider === "google") {
+        await signInWithGoogle();
+        return;
+    }
+
     // Mock network delay for effect
     setTimeout(() => {
       signIn();
-      // The router push is handled inside signIn context usually, but here we can rely on it.
     }, 1500);
   };
 
@@ -181,7 +184,7 @@ export default function LoginPage() {
             className="flex justify-center gap-2 mb-10"
           >
             <span className="text-muted-foreground text-sm">
-              Don't have an account?
+              Don&apos;t have an account?
             </span>
             <Link href="/auth/register" className="text-primary text-sm font-bold hover:underline">
               Sign Up

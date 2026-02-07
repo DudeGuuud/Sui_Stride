@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
@@ -17,7 +17,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNativeLocation } from "@/hooks/use-native-location";
-import { cn } from "@/lib/utils";
 
 // Dynamically import Map to avoid SSR issues with Leaflet
 const MapComponent = dynamic(() => import("@/components/map-component"), {
@@ -35,8 +34,10 @@ export default function WorkoutTrackingPage() {
   const [isTracking, setIsTracking] = useState(true);
   const { location, path, distance, errorMsg } = useNativeLocation(isTracking);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [calories, setCalories] = useState(0);
+  // Derived state for calories: ~1 kcal per kg per km (approximate for running)
   const weightKg = 70; // User weight
+  const calories = (distance / 1000) * weightKg * 1.036;
+
   const router = useRouter();
 
   useEffect(() => {
@@ -48,26 +49,6 @@ export default function WorkoutTrackingPage() {
     }
     return () => clearInterval(interval);
   }, [isTracking]);
-
-  // Calculate Calories
-  useEffect(() => {
-    if (!isTracking || !location) return;
-
-    const speedMetersPerSec = location.speed || 0;
-    const speedMetersPerMin = speedMetersPerSec * 60;
-
-    let vo2 = 0;
-    if (speedMetersPerSec < 0.8) {
-      vo2 = 0.1 * speedMetersPerMin + 3.5;
-    } else {
-      vo2 = 0.2 * speedMetersPerMin + 3.5;
-    }
-
-    const kcalPerMin = (vo2 * weightKg) / 200;
-    const kcalPerSec = kcalPerMin / 60;
-
-    setCalories((c) => c + kcalPerSec);
-  }, [location, isTracking, weightKg]);
 
   const formatTime = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
