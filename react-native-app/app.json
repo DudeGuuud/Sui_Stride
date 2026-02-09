@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "SuiStride",
-    "slug": "sui-stride",
+    "slug": "suistride",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -41,6 +41,11 @@
           "locationAlwaysAndWhenInUsePermission": "SuiStride needs your location to track your workouts."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "975e6f04-e5df-43dc-903d-18bd3814f776"
+      }
+    }
   }
 }
