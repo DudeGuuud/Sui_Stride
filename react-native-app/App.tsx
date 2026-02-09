@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { StyleSheet, SafeAreaView, Platform, StatusBar } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 import { useLocationTracking } from './hooks/use-location-tracking';
 
@@ -9,7 +9,7 @@ const WEB_APP_URL = process.env.EXPO_PUBLIC_WEB_APP_URL || 'http://localhost:300
 
 export default function App() {
   const webViewRef = useRef<WebView>(null);
-  const { location, errorMsg } = useLocationTracking(true);
+  const { location } = useLocationTracking(true);
 
   // Send GPS data to Web
   useEffect(() => {
@@ -25,7 +25,7 @@ export default function App() {
     }
   }, [location]);
 
-  const handleMessage = (event: any) => {
+  const handleMessage = (event: WebViewMessageEvent) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       
@@ -36,11 +36,12 @@ export default function App() {
       if (data.type === 'HAPTICS_IMPACT') {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
-    } catch (e) {
+    } catch {
       // Ignore non-JSON messages
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleError = (syntheticEvent: any) => {
     const { nativeEvent } = syntheticEvent;
     console.warn('WebView error: ', nativeEvent);

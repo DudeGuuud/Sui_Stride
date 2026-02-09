@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as Location from 'expo-location';
+import { Pedometer } from 'expo-sensors';
 
 export interface LocationData {
   latitude: number;
@@ -7,6 +8,7 @@ export interface LocationData {
   speed: number | null;
   accuracy: number | null;
   timestamp: number;
+  steps: number; // Added real-time steps
 }
 
 export const useLocationTracking = (tracking: boolean = true) => {
@@ -14,18 +16,33 @@ export const useLocationTracking = (tracking: boolean = true) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    let subscription: Location.LocationSubscription | null = null;
+    let locationSubscription: Location.LocationSubscription | null = null;
+    let pedometerSubscription: Pedometer.PedometerSubscription | null = null;
+    // Track steps in a local variable to update location immediately
+    let currentSteps = 0;
 
     (async () => {
       try {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
+        // 1. Request Location Permissions
+        const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
+        if (locStatus !== 'granted') {
           setErrorMsg('Permission to access location was denied');
           return;
         }
 
+        // 2. Request Pedometer Permissions
+        const isAvailable = await Pedometer.isAvailableAsync();
+        if (isAvailable) {
+           pedometerSubscription = Pedometer.watchStepCount((result) => {
+            currentSteps = result.steps;
+            // Optimistically update location if we have one
+            setLocation(prev => prev ? { ...prev, steps: currentSteps } : null);
+          });
+        }
+
         if (tracking) {
-          subscription = await Location.watchPositionAsync(
+          // Track Location
+          locationSubscription = await Location.watchPositionAsync(
             {
               accuracy: Location.Accuracy.BestForNavigation,
               timeInterval: 1000,
@@ -38,19 +55,19 @@ export const useLocationTracking = (tracking: boolean = true) => {
                 speed: newLocation.coords.speed,
                 accuracy: newLocation.coords.accuracy,
                 timestamp: newLocation.timestamp,
+                steps: currentSteps, // Use the latest steps value
               });
             }
           );
         }
-      } catch (err) {
-        setErrorMsg('Error initializing location services');
+      } catch (_) {
+        setErrorMsg('Error initializing tracking services');
       }
     })();
 
     return () => {
-      if (subscription) {
-        subscription.remove();
-      }
+      locationSubscription?.remove();
+      pedometerSubscription?.remove();
     };
   }, [tracking]);
 

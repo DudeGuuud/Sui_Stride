@@ -12,7 +12,8 @@ module sui_stride::core {
     const E_ALREADY_VOTED: u64 = 5;
     const E_ALREADY_CLAIMED: u64 = 6;
     const E_MAX_PARTICIPANTS: u64 = 7;
-    
+    const E_INVALID_SESSION: u64 = 8;
+
     const PLATFORM_FEE_BPS: u64 = 400; // 4% (Basis Points)
     const MAX_PARTICIPANTS: u64 = 100; // Prevent gas limit issues
 
@@ -21,6 +22,7 @@ module sui_stride::core {
     /// User Profile Object - Owned by User
     public struct UserData has key, store {
         id: UID,
+        device_pubkey: vector<u8>, // Device-specific public key for attestation
         total_steps: u64,
         active_stakes: vector<StakeInfo>
     }
@@ -48,7 +50,18 @@ module sui_stride::core {
         user_id: address,
         amount: u64, // Amount staked
         steps: u64,  // Steps recorded for this pool event
-        claimed: bool
+        merkle_root: vector<u8>, // Root hash of the trajectory segments
+        claimed: bool,
+        challenged: bool
+    }
+
+    /// Workout Session - Short-lived object to prevent replay
+    public struct Session has key, store {
+        id: UID,
+        user: address,
+        pool_id: ID,
+        nonce: u64,
+        expires_at: u64
     }
 
     /// Governance Proposal - Shared Object
@@ -68,8 +81,9 @@ module sui_stride::core {
     // --- Events ---
     public struct PoolCreated has copy, drop { pool_id: ID, creator: address }
     public struct Staked has copy, drop { pool_id: ID, user: address, amount: u64 }
-    public struct StepsSubmitted has copy, drop { user: address, steps: u64 }
+    public struct StepsSubmitted has copy, drop { user: address, steps: u64, root: vector<u8> }
     public struct RewardsDistributed has copy, drop { pool_id: ID, winner_count: u64 }
+    public struct ChallengeInitiated has copy, drop { pool_id: ID, user: address, segment_index: u64 }
 
     // --- Functions ---
 
@@ -80,13 +94,32 @@ module sui_stride::core {
     // --- User Management ---
 
     #[allow(lint(self_transfer))]
-    public fun create_user(ctx: &mut TxContext) {
+    public fun create_user(pubkey: vector<u8>, ctx: &mut TxContext) {
         let user = UserData {
             id: object::new(ctx),
+            device_pubkey: pubkey,
             total_steps: 0,
             active_stakes: vector::empty()
         };
         transfer::transfer(user, ctx.sender());
+    }
+
+    // --- Session Management ---
+
+    #[allow(lint(self_transfer))]
+    public fun start_run(
+        pool: &StakingPool,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let session = Session {
+            id: object::new(ctx),
+            user: ctx.sender(),
+            pool_id: object::id(pool),
+            nonce: tx_context::epoch(ctx), // Use epoch as simple nonce
+            expires_at: clock.timestamp_ms() + (pool.duration_secs * 1000)
+        };
+        transfer::transfer(session, ctx.sender());
     }
 
     // --- Pool Management ---
@@ -116,7 +149,9 @@ module sui_stride::core {
             user_id: sender,
             amount,
             steps: 0,
-            claimed: false
+            merkle_root: vector::empty(),
+            claimed: false,
+            challenged: false
         };
         pool.participants.push_back(participant);
 
@@ -149,7 +184,9 @@ module sui_stride::core {
             user_id: sender,
             amount,
             steps: 0, // Steps start at 0 for this pool
-            claimed: false
+            merkle_root: vector::empty(),
+            claimed: false,
+            challenged: false
         };
         pool.participants.push_back(participant);
 
@@ -166,52 +203,84 @@ module sui_stride::core {
 
     // --- Steps & Ranking ---
 
-    /// Submit steps. In reality, this should be signed by an security way
-    /// But now we use mobile device with simplified anti-cheating mechanism.
-    /// Here we trust the user entry for the prototype.
-    public fun submit_steps(
+    /// Submit steps with Merkle Proof commitment
+    public fun submit_run_with_proof(
         pool: &mut StakingPool,
         user_data: &mut UserData,
+        session: Session,
         steps: u64,
-        _clock: &Clock, 
+        merkle_root: vector<u8>,
+        _signature: vector<u8>, // In production, verify this against user_data.device_pubkey
+        clock: &Clock, 
         ctx: &mut TxContext
     ) {
         let sender = ctx.sender();
-        
-        // Allow submitting steps even after end, but before finalization
+        let Session { id, user, pool_id, nonce: _, expires_at } = session;
+        object::delete(id);
+
+        assert!(user == sender, E_INVALID_SESSION);
+        assert!(pool_id == object::id(pool), E_INVALID_SESSION);
+        assert!(clock.timestamp_ms() <= expires_at, E_POOL_ENDED);
         assert!(!pool.finalized, E_POOL_ENDED); 
 
         // Update global user stats
         user_data.total_steps = user_data.total_steps + steps;
 
-        // Update pool participant steps
+        // Update pool participant steps and root
         let len = pool.participants.length();
         let mut i = 0;
         while (i < len) {
             let p = &mut pool.participants[i];
             if (p.user_id == sender) {
                 p.steps = p.steps + steps;
+                p.merkle_root = merkle_root;
                 break
             };
             i = i + 1;
         };
         
-        event::emit(StepsSubmitted { user: sender, steps });
+        event::emit(StepsSubmitted { user: sender, steps, root: merkle_root });
+    }
+
+    // --- Challenges ---
+
+    /// Optimistic Challenge: Anyone can challenge a run if they suspect foul play
+    public fun challenge_run(
+        pool: &mut StakingPool,
+        target_user: address,
+        segment_index: u64,
+        _ctx: &mut TxContext
+    ) {
+        // Mark participant as challenged
+        let len = pool.participants.length();
+        let mut i = 0;
+        while (i < len) {
+            let p = &mut pool.participants[i];
+            if (p.user_id == target_user) {
+                p.challenged = true;
+                break
+            };
+            i = i + 1;
+        };
+
+        event::emit(ChallengeInitiated { 
+            pool_id: object::id(pool), 
+            user: target_user, 
+            segment_index 
+        });
     }
 
     // --- Rewards & Governance ---
 
-    /// Distribute rewards based on ranking (Winner takes loser's stake logic)
-    /// Top 50% split the pot. Bottom 50% lose.
+    /// Distribute rewards based on ranking
     #[allow(lint(self_transfer))]
     public fun distribute_rewards(
         pool: &mut StakingPool,
-        _admin_cap: &mut AdminCap, // Pass admin cap to confirm fee destination (or just burn/treasury)
+        _admin_cap: &mut AdminCap, 
         clock: &Clock,
         ctx: &mut TxContext
     ) {
         let current_time = clock.timestamp_ms();
-        // Ensure pool time has passed
         assert!(current_time >= pool.created_at + (pool.duration_secs * 1000), E_POOL_ACTIVE);
         assert!(!pool.finalized, E_ALREADY_CLAIMED);
 
@@ -223,12 +292,10 @@ module sui_stride::core {
         // 1. Take Platform Fee
         let fee_amount = (total_balance * PLATFORM_FEE_BPS) / 10000;
         let fee_balance = pool.strd_treasury.split(fee_amount);
-        // Send fee to admin/platform
         let fee_coin = coin::from_balance(fee_balance, ctx);
-        transfer::public_transfer(fee_coin, ctx.sender()); // Admin gets fee
+        transfer::public_transfer(fee_coin, ctx.sender()); 
 
-        // 2. Rank Users (Bubble Sort for small N)
-        // Warning: Expensive. MAX_PARTICIPANTS limits this.
+        // 2. Rank Users (Simple Bubble Sort)
         let len = pool.participants.length();
         let mut i = 0;
         while (i < len) {
@@ -259,7 +326,6 @@ module sui_stride::core {
             k = k + 1;
         };
 
-        // Remaining dust (if any) stays in pool or burns? For now, leave in object.
         event::emit(RewardsDistributed { pool_id: object::id(pool), winner_count: winners_count });
     }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNativeLocation } from "@/hooks/use-native-location";
+import { StrideSegmenter, computeMerkleRoot } from "@/lib/stride-logic";
 
 // Dynamically import Map to avoid SSR issues with Leaflet
 const MapComponent = dynamic(() => import("@/components/map-component"), {
@@ -32,8 +33,13 @@ const MapComponent = dynamic(() => import("@/components/map-component"), {
 
 export default function WorkoutTrackingPage() {
   const [isTracking, setIsTracking] = useState(true);
-  const { location, path, distance, errorMsg } = useNativeLocation(isTracking);
+  const { location, path, relativePoints, distance, steps, errorMsg } = useNativeLocation(isTracking);
   const [elapsedTime, setElapsedTime] = useState(0);
+  
+  // Anti-cheat tracking
+  const segmenterRef = useRef<StrideSegmenter>(new StrideSegmenter("MOCK_NONCE"));
+  const lastSegmentStepsRef = useRef(0);
+
   // Derived state for calories: ~1 kcal per kg per km (approximate for running)
   const weightKg = 70; // User weight
   const calories = (distance / 1000) * weightKg * 1.036;
@@ -49,6 +55,39 @@ export default function WorkoutTrackingPage() {
     }
     return () => clearInterval(interval);
   }, [isTracking]);
+
+  // Handle segmenting as points come in
+  useEffect(() => {
+    if (relativePoints.length > 0 && isTracking) {
+      const latest = relativePoints[relativePoints.length - 1];
+      
+      // Calculate incremental steps for this segment interval
+      const incrementalSteps = steps - lastSegmentStepsRef.current;
+      
+      // In production: acc_variance would come from native bridge
+      const mockAccVar = 0.8; 
+      
+      segmenterRef.current.addPoint(latest, incrementalSteps, mockAccVar);
+      
+      // If a segment was finalized in the segmenter, we need to update our baseline.
+      // The segmenter handles the 'addPoint' internally. 
+      // To keep it simple, we track steps per segment.
+    }
+  }, [relativePoints, isTracking, steps]);
+
+  const handleEndWorkout = async () => {
+    setIsTracking(false);
+    const segments = segmenterRef.current.getSegments();
+    const root = await computeMerkleRoot(segments);
+    
+    // Log for debug
+    console.log("Workout Ended. Segments:", segments.length, "Root:", root);
+    
+    // In production: trigger Sui Transaction with submit_run_with_proof
+    // For now, redirect with success
+    alert(`Workout Complete!\nTotal Distance: ${(distance/1000).toFixed(2)}km\nMerkle Root Generated: ${root}`);
+    router.back();
+  };
 
   const formatTime = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -215,7 +254,7 @@ export default function WorkoutTrackingPage() {
       <Button
         variant="outline"
         className="h-16 w-full rounded-2xl border-2 border-primary/20 bg-background/20 mb-10 hover:bg-primary/10 transition-colors"
-        onClick={() => router.back()}
+        onClick={handleEndWorkout}
       >
         <span className="text-foreground text-lg font-bold">End Workout</span>
       </Button>
