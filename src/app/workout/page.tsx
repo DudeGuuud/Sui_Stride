@@ -13,11 +13,23 @@ import {
   Pause,
   Play,
   Target,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNativeLocation } from "@/hooks/use-native-location";
 import { StrideSegmenter, computeMerkleRoot } from "@/lib/stride-logic";
+import { 
+  useCurrentAccount, 
+  useSignAndExecuteTransaction,
+  ConnectButton 
+} from "@mysten/dapp-kit";
+import { Transaction } from "@mysten/sui/transactions";
+
+// Blockchain configuration from environment variables
+const PACKAGE_ID = process.env.NEXT_PUBLIC_SUI_PACKAGE_ID || "0x0";
+const PARTICIPANT_STORE_ID = process.env.NEXT_PUBLIC_SUI_PARTICIPANT_STORE_ID || "0x0";
+const STRIDE_MODULE = "core";
 
 // Dynamically import Map to avoid SSR issues with Leaflet
 const MapComponent = dynamic(() => import("@/components/map-component"), {
@@ -32,12 +44,17 @@ const MapComponent = dynamic(() => import("@/components/map-component"), {
 });
 
 export default function WorkoutTrackingPage() {
+  const currentAccount = useCurrentAccount();
+  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+
   const [isTracking, setIsTracking] = useState(true);
   const { location, path, relativePoints, distance, steps, errorMsg } = useNativeLocation(isTracking);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [recenterTrigger, setRecenterTrigger] = useState(0); // Trigger for map re-centering
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Anti-cheat tracking
-  const segmenterRef = useRef<StrideSegmenter>(new StrideSegmenter("MOCK_NONCE"));
+  const segmenterRef = useRef<StrideSegmenter>(new StrideSegmenter("SESSION_NONCE_PLACEHOLDER"));
   const lastSegmentStepsRef = useRef(0);
 
   // Derived state for calories: ~1 kcal per kg per km (approximate for running)
@@ -60,33 +77,64 @@ export default function WorkoutTrackingPage() {
   useEffect(() => {
     if (relativePoints.length > 0 && isTracking) {
       const latest = relativePoints[relativePoints.length - 1];
-      
-      // Calculate incremental steps for this segment interval
       const incrementalSteps = steps - lastSegmentStepsRef.current;
-      
-      // In production: acc_variance would come from native bridge
       const mockAccVar = 0.8; 
-      
       segmenterRef.current.addPoint(latest, incrementalSteps, mockAccVar);
-      
-      // If a segment was finalized in the segmenter, we need to update our baseline.
-      // The segmenter handles the 'addPoint' internally. 
-      // To keep it simple, we track steps per segment.
     }
   }, [relativePoints, isTracking, steps]);
 
   const handleEndWorkout = async () => {
+    if (!currentAccount) {
+      alert("Please connect your wallet first");
+      return;
+    }
+
     setIsTracking(false);
-    const segments = segmenterRef.current.getSegments();
-    const root = await computeMerkleRoot(segments);
-    
-    // Log for debug
-    console.log("Workout Ended. Segments:", segments.length, "Root:", root);
-    
-    // In production: trigger Sui Transaction with submit_run_with_proof
-    // For now, redirect with success
-    alert(`Workout Complete!\nTotal Distance: ${(distance/1000).toFixed(2)}km\nMerkle Root Generated: ${root}`);
-    router.back();
+    setIsSubmitting(true);
+
+    try {
+      const segments = segmenterRef.current.getSegments();
+      const root = await computeMerkleRoot(segments);
+      
+      console.log("Workout Ended. Segments:", segments.length, "Root:", root);
+
+      if (PACKAGE_ID === "0x0") {
+        console.warn("Contract not deployed. Skipping Sui transaction.");
+        alert(`Workout Data Ready!\nDistance: ${(distance/1000).toFixed(2)}km\nMerkle Root: ${root}\n(Transaction skipped: Contract not deployed)`);
+        router.back();
+        return;
+      }
+
+      const tx = new Transaction();
+      tx.moveCall({
+        target: `${PACKAGE_ID}::${STRIDE_MODULE}::submit_run_with_proof`,
+        arguments: [
+          tx.object(PARTICIPANT_STORE_ID),
+          tx.pure.string(root),
+          tx.pure.u64(Math.floor(distance)),
+          tx.pure.u64(steps),
+        ],
+      });
+
+      signAndExecute(
+        { transaction: tx },
+        {
+          onSuccess: (result) => {
+            console.log("Transaction successful:", result);
+            alert(`Workout Complete and Verified on Sui!\nDigest: ${result.digest}`);
+            router.back();
+          },
+          onError: (err) => {
+            console.error("Transaction failed:", err);
+            alert("Failed to submit run to blockchain. Check console for details.");
+            setIsSubmitting(false);
+          },
+        }
+      );
+    } catch (err) {
+      console.error("Error ending workout:", err);
+      setIsSubmitting(false);
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -131,8 +179,7 @@ export default function WorkoutTrackingPage() {
           SuiStride
         </span>
         <div className="flex items-center gap-2">
-          <div className="w-4 h-2 bg-foreground rounded-sm opacity-50" />
-          <div className="w-2 h-2 bg-foreground rounded-full opacity-50" />
+          <ConnectButton />
         </div>
       </header>
 
@@ -149,12 +196,25 @@ export default function WorkoutTrackingPage() {
         </span>
       </div>
 
+      {!currentAccount && (
+        <div className="bg-secondary/10 border border-secondary/20 rounded-2xl p-4 mb-8 flex flex-row items-center gap-4">
+          <Wallet className="text-secondary" size={24} />
+          <div>
+            <p className="text-foreground text-sm font-bold">Wallet Disconnected</p>
+            <p className="text-muted-foreground text-xs">Connect your Sui wallet to earn rewards.</p>
+          </div>
+        </div>
+      )}
+
       {/* Map */}
       <div className="relative w-full h-80 rounded-3xl bg-card border border-border overflow-hidden mb-8 shadow-lg shadow-black/20">
-        <MapComponent location={location} path={path} />
+        <MapComponent location={location} path={path} recenterTrigger={recenterTrigger} />
 
         <div className="absolute right-4 bottom-4 gap-3 flex flex-col z-[400]">
-          <button className="w-10 h-10 rounded-full bg-background/80 flex items-center justify-center border border-border hover:bg-background transition-colors">
+          <button 
+            className="w-10 h-10 rounded-full bg-background/80 flex items-center justify-center border border-border hover:bg-background transition-colors active:scale-95"
+            onClick={() => setRecenterTrigger(prev => prev + 1)}
+          >
             <Target size={20} className="text-foreground" />
           </button>
           <button className="w-10 h-10 rounded-full bg-background/80 flex items-center justify-center border border-border hover:bg-background transition-colors">
@@ -253,10 +313,13 @@ export default function WorkoutTrackingPage() {
       {/* End Workout Button */}
       <Button
         variant="outline"
-        className="h-16 w-full rounded-2xl border-2 border-primary/20 bg-background/20 mb-10 hover:bg-primary/10 transition-colors"
+        className="h-16 w-full rounded-2xl border-2 border-primary/20 bg-background/20 mb-10 hover:bg-primary/10 transition-colors disabled:opacity-50"
         onClick={handleEndWorkout}
+        disabled={isSubmitting}
       >
-        <span className="text-foreground text-lg font-bold">End Workout</span>
+        <span className="text-foreground text-lg font-bold">
+          {isSubmitting ? "Submitting to Sui..." : "End Workout"}
+        </span>
       </Button>
     </div>
   );

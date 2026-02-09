@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { StrideTracker, RelativePoint } from "@/lib/stride-logic";
-import { StrideRepository, StrideRun } from "@/lib/stride-repo";
+import { StrideRepository } from "@/lib/stride-repo";
 
 export interface LocationPoint {
   latitude: number;
@@ -96,7 +96,7 @@ export function useNativeLocation(isActive: boolean) {
         // Start new run immediately? Or wait for first point?
         // Let's wait for first valid location key to start run?
         // Or just start one now.
-        const newRunId = await repo.startRun(crypto.randomUUID());
+        const newRunId = await repo.startRun();
         runIdRef.current = newRunId;
         console.log("Started new run:", newRunId);
       }
@@ -116,8 +116,8 @@ export function useNativeLocation(isActive: boolean) {
     ) => {
       if (!isActiveRef.current) return;
 
-      // Filter 1: Accuracy check (skip if > 20m)
-      if (accuracy && accuracy > 20) return;
+      // Filter 1: Accuracy check (skip if > 200m)
+      if (accuracy && accuracy > 200) return;
 
       // Filter 2: Kalman & Relative Tracker
       const relPoint = trackerRef.current.process(latitude, longitude, timestamp);
@@ -172,13 +172,13 @@ export function useNativeLocation(isActive: boolean) {
         // We persist the RELATIVE point as that's the "calculated thing"
         // But maybe we should also persist the LatLon if we want to verify it later?
         // The prompt says "ensure calculated things are the same".
-        repoRef.current.addPoint(runIdRef.current, relPoint);
+        repoRef.current.addPoint(runIdRef.current, relPoint).catch(e => console.error("Failed to save point:", e));
 
         // Save origin if not saved yet
         if (!originSavedRef.current) {
           const origin = trackerRef.current.getOrigin();
           if (origin) {
-            repoRef.current.setRunOrigin(runIdRef.current, origin);
+            repoRef.current.setRunOrigin(runIdRef.current, origin).catch(e => console.error("Failed to save origin:", e));
             originSavedRef.current = true;
           }
         }
@@ -198,7 +198,7 @@ export function useNativeLocation(isActive: boolean) {
         /* await */ repoRef.current.updateRunStats(runIdRef.current, {
           distance: distance + distDelta, // naive: uses closure state + delta
           steps: newSteps ?? steps
-        });
+        }).catch(e => console.error("Failed to update stats:", e));
       }
     },
     [distance, steps] // depend on distance/steps to save correct values
@@ -291,7 +291,7 @@ export function useNativeLocation(isActive: boolean) {
 
     // Start new run
     if (repoRef.current) {
-      const newId = await repoRef.current.startRun(crypto.randomUUID());
+      const newId = await repoRef.current.startRun();
       runIdRef.current = newId;
     }
   }, [distance, steps]);

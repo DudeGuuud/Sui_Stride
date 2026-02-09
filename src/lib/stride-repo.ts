@@ -53,7 +53,7 @@ export class StrideRepository {
         });
     }
 
-    async startRun(nonce: string): Promise<string> {
+    async startRun(): Promise<string> {
         const db = await this.dbPromise;
         const runId = crypto.randomUUID();
         const run: StrideRun = {

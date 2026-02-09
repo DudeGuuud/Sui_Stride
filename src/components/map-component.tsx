@@ -19,19 +19,38 @@ L.Icon.Default.mergeOptions({
 interface MapComponentProps {
   location: LocationPoint | null;
   path: LocationPoint[];
+  recenterTrigger?: number;
 }
 
-function MapUpdater({ location }: { location: LocationPoint | null }) {
+function MapUpdater({ location, recenterTrigger }: { location: LocationPoint | null, recenterTrigger?: number }) {
   const map = useMap();
+  
+  // Effect for auto-centering on location update
   useEffect(() => {
     if (location) {
+      // Use setView for smooth tracking without animation overhead during updates
       map.setView([location.latitude, location.longitude], map.getZoom());
     }
-  }, [location, map]);
+    // We intentionally exclude 'map' from deps to avoid re-running on map instance changes (rare)
+    // and exclude 'recenterTrigger' because we handle that separately
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
+
+  // Effect for manual recenter trigger
+  useEffect(() => {
+    if (location && recenterTrigger && recenterTrigger > 0) {
+      // Use flyTo for manual actions to give visual feedback
+      map.flyTo([location.latitude, location.longitude], 16, {
+        duration: 1.5
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recenterTrigger]); // Only run when trigger changes
+  
   return null;
 }
 
-export default function MapComponent({ location, path }: MapComponentProps) {
+export default function MapComponent({ location, path, recenterTrigger }: MapComponentProps) {
   const center: [number, number] = location
     ? [location.latitude, location.longitude]
     : [37.7749, -122.4194]; // Default San Francisco
@@ -71,7 +90,7 @@ export default function MapComponent({ location, path }: MapComponentProps) {
         />
       )}
 
-      <MapUpdater location={location} />
+      <MapUpdater location={location} recenterTrigger={recenterTrigger} />
     </MapContainer>
   );
 }
