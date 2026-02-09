@@ -56,6 +56,7 @@ export default function WorkoutTrackingPage() {
   // Anti-cheat tracking
   const segmenterRef = useRef<StrideSegmenter>(new StrideSegmenter("SESSION_NONCE_PLACEHOLDER"));
   const lastSegmentStepsRef = useRef(0);
+  const hasLocatedRef = useRef(false);
 
   // Derived state for calories: ~1 kcal per kg per km (approximate for running)
   const weightKg = 70; // User weight
@@ -65,7 +66,7 @@ export default function WorkoutTrackingPage() {
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (isTracking) {
+    if (isTracking && hasLocatedRef.current) {
       interval = setInterval(() => {
         setElapsedTime((prev) => prev + 1);
       }, 1000);
@@ -75,7 +76,12 @@ export default function WorkoutTrackingPage() {
 
   // Handle segmenting as points come in
   useEffect(() => {
-    if (relativePoints.length > 0 && isTracking) {
+    if (location && !hasLocatedRef.current) {
+        hasLocatedRef.current = true;
+        setRecenterTrigger(prev => prev + 1);
+    }
+
+    if (relativePoints.length > 0 && isTracking && hasLocatedRef.current) {
       const latest = relativePoints[relativePoints.length - 1];
       const incrementalSteps = steps - lastSegmentStepsRef.current;
       const mockAccVar = 0.8; 
