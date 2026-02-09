@@ -239,7 +239,7 @@ export async function computeMerkleRoot(segments: RunSegment[]): Promise<string>
   const leafHashes: Uint8Array[] = [];
   for (const s of segments) {
     const data = serializeSegment(s);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data as unknown as BufferSource);
     leafHashes.push(new Uint8Array(hashBuffer));
   }
 
@@ -258,7 +258,7 @@ export async function computeMerkleRoot(segments: RunSegment[]): Promise<string>
         combined.set(left);
         combined.set(right, left.length);
 
-        const hashBuffer = await crypto.subtle.digest('SHA-256', combined);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', combined as unknown as BufferSource);
         nextLevel.push(new Uint8Array(hashBuffer));
       } else {
         // Promote single node (odd number of nodes)

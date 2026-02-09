@@ -24,7 +24,7 @@ interface MapComponentProps {
 
 function MapUpdater({ location, recenterTrigger }: { location: LocationPoint | null, recenterTrigger?: number }) {
   const map = useMap();
-  
+
   // Effect for auto-centering on location update
   useEffect(() => {
     if (location) {
@@ -46,7 +46,7 @@ function MapUpdater({ location, recenterTrigger }: { location: LocationPoint | n
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recenterTrigger]); // Only run when trigger changes
-  
+
   return null;
 }
 
@@ -69,7 +69,7 @@ export default function MapComponent({ location, path, recenterTrigger }: MapCom
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
       />
-      
+
       {path.length > 1 && (
         <Polyline
           positions={polylinePositions}

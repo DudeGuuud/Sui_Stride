@@ -21,9 +21,9 @@ import { useNativeLocation } from "@/hooks/use-native-location";
 import { StrideSegmenter, computeMerkleRoot } from "@/lib/stride-logic";
 import { 
   useCurrentAccount, 
-  useSignAndExecuteTransaction,
+  useDAppKit,
   ConnectButton 
-} from "@mysten/dapp-kit";
+} from "@mysten/dapp-kit-react";
 import { Transaction } from "@mysten/sui/transactions";
 
 // Blockchain configuration from environment variables
@@ -45,7 +45,7 @@ const MapComponent = dynamic(() => import("@/components/map-component"), {
 
 export default function WorkoutTrackingPage() {
   const currentAccount = useCurrentAccount();
-  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const dAppKit = useDAppKit();
 
   const [isTracking, setIsTracking] = useState(true);
   const { location, path, relativePoints, distance, steps, errorMsg } = useNativeLocation(isTracking);
@@ -116,23 +116,18 @@ export default function WorkoutTrackingPage() {
         ],
       });
 
-      signAndExecute(
-        { transaction: tx },
-        {
-          onSuccess: (result) => {
-            console.log("Transaction successful:", result);
-            alert(`Workout Complete and Verified on Sui!\nDigest: ${result.digest}`);
-            router.back();
-          },
-          onError: (err) => {
-            console.error("Transaction failed:", err);
-            alert("Failed to submit run to blockchain. Check console for details.");
-            setIsSubmitting(false);
-          },
-        }
-      );
+      const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      
+      if (result.FailedTransaction) {
+        throw new Error(`Transaction failed: ${result.FailedTransaction.status.error?.message}`);
+      }
+
+      console.log("Transaction successful:", result);
+      alert(`Workout Complete and Verified on Sui!\nDigest: ${result.Transaction.digest}`);
+      router.back();
     } catch (err) {
       console.error("Error ending workout:", err);
+      alert(err instanceof Error ? err.message : "Failed to submit run to blockchain.");
       setIsSubmitting(false);
     }
   };
