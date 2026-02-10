@@ -43,10 +43,12 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     try {
-      const protocol = window.location.protocol;
-      const host = window.location.host;
-      const redirectUrl = `${protocol}//${host}/auth/callback`;
+      // Prioritize the configured app URL from environment variables
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+      const redirectUrl = `${appUrl}/auth/callback`;
       
+      console.log("Constructed Redirect URL:", redirectUrl);
+
       const url = await enokiFlow.createAuthorizationURL({
         provider: 'google',
         clientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
@@ -116,23 +118,33 @@ export default function LoginPage() {
             <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest text-center mb-6">
               Log in with zkLogin
             </p>
-            <div className="flex flex-col gap-4 mb-4">
+            <div className="flex flex-col gap-6 mb-4">
               <Button 
                 variant="outline" 
-                className="w-full h-12 rounded-xl border-border/50 bg-card hover:bg-card/80 flex items-center gap-3 justify-center"
+                className="w-full h-16 rounded-[24px] border-border/50 bg-card hover:bg-card/80 flex items-center gap-4 justify-center shadow-xl shadow-primary/5 group transition-all duration-300"
                 onClick={handleGoogleLogin}
                 disabled={isLoading}
               >
-                 <Chrome size={20} />
-                 <span className="font-bold">Sign in with Google</span>
+                 <Chrome size={24} className="group-hover:scale-110 transition-transform" />
+                 <span className="text-lg font-black uppercase tracking-tight">Sign in with Google</span>
               </Button>
               
-              <div className="bg-card/50 border border-border/50 rounded-2xl p-4 text-center">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Or connect your Sui wallet directly
+              <div className="flex items-center gap-4 w-full">
+                <div className="flex-1 h-[1px] bg-border/30" />
+                <span className="text-muted-foreground text-[10px] font-black uppercase tracking-tighter">
+                  OR
+                </span>
+                <div className="flex-1 h-[1px] bg-border/30" />
+              </div>
+
+              <div className="bg-card/30 border border-border/30 rounded-[24px] p-6 text-center backdrop-blur-sm">
+                <p className="text-[10px] text-muted-foreground font-black uppercase tracking-[2px] mb-4">
+                  Or use a native wallet
                 </p>
                 <div className="flex justify-center">
-                  <ConnectButton className="w-full" />
+                  <ConnectButton 
+                    className="!w-full !h-12 !rounded-xl !border-border/50 !bg-card hover:!bg-card/80 !text-sm !font-bold !transition-all !duration-300 shadow-lg shadow-primary/5"
+                  />
                 </div>
               </div>
             </div>
@@ -140,74 +152,13 @@ export default function LoginPage() {
 
           <motion.div
             variants={itemVariants}
-            className="flex items-center gap-4 mb-8 w-full"
-          >
-            <div className="flex-1 h-[1px] bg-border/30" />
-            <span className="text-muted-foreground text-[10px] font-black uppercase">
-              OR
-            </span>
-            <div className="flex-1 h-[1px] bg-border/30" />
-          </motion.div>
-
-          {/* Traditional Form */}
-          <motion.div variants={itemVariants} className="flex flex-col gap-4 mb-8 w-full">
-            <div className="bg-card border border-border/50 rounded-2xl px-4 py-1 flex items-center gap-3">
-              <Mail size={18} color="#94A3B8" />
-              <Input
-                placeholder="Email Address"
-                className="flex-1 text-foreground font-medium border-none bg-transparent shadow-none focus-visible:ring-0 placeholder:text-muted-foreground"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                type="email"
-                autoCapitalize="none"
-                disabled={isLoading}
-              />
-            </div>
-            <div className="bg-card border border-border/50 rounded-2xl px-4 py-1 flex items-center gap-3">
-              <Lock size={18} color="#94A3B8" />
-              <Input
-                placeholder="Password"
-                className="flex-1 text-foreground font-medium border-none bg-transparent shadow-none focus-visible:ring-0 placeholder:text-muted-foreground"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                type="password"
-                disabled={isLoading}
-              />
-            </div>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                className="text-primary text-xs font-bold hover:underline"
-                disabled={isLoading}
-              >
-                Forgot Password?
-              </button>
-            </div>
-          </motion.div>
-
-          <motion.div variants={itemVariants} className="w-full">
-            <Button
-              className="w-full h-16 rounded-[24px] bg-primary shadow-xl shadow-primary/30 mb-8 hover:bg-primary/90 text-[#0A0E12] text-lg font-black uppercase tracking-tight"
-              onClick={handleEmailLogin}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent text-[#0A0E12]" />
-              ) : (
-                "Login"
-              )}
-            </Button>
-          </motion.div>
-
-          <motion.div
-            variants={itemVariants}
-            className="flex justify-center gap-2 mb-10"
+            className="flex justify-center gap-2 mt-auto mb-10"
           >
             <span className="text-muted-foreground text-sm">
-              Don&apos;t have an account?
+              New to SuiStride?
             </span>
             <Link href="/auth/register" className="text-primary text-sm font-bold hover:underline">
-              Sign Up
+              Get Started
             </Link>
           </motion.div>
         </motion.div>
