@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/auth";
 import { ConnectButton } from "@mysten/dapp-kit-react";
+import { enokiFlow } from "@/lib/enoki";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -38,6 +39,31 @@ export default function LoginPage() {
       router.push('/');
     }
   }, [isConnected, router]);
+
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    try {
+      const protocol = window.location.protocol;
+      const host = window.location.host;
+      const redirectUrl = `${protocol}//${host}/auth/callback`;
+      
+      const url = await enokiFlow.createAuthorizationURL({
+        provider: 'google',
+        clientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
+        redirectUrl: redirectUrl,
+        network: 'testnet',
+        extraParams: {
+          scope: ['openid', 'email', 'profile'],
+        },
+      });
+      
+      window.location.href = url;
+    } catch (error) {
+      console.error("Google login error:", error);
+      setIsLoading(false);
+      alert("Failed to initialize Google login. Check console for details.");
+    }
+  };
 
   const handleEmailLogin = () => {
     setIsLoading(true);
@@ -91,9 +117,19 @@ export default function LoginPage() {
               Log in with zkLogin
             </p>
             <div className="flex flex-col gap-4 mb-4">
+              <Button 
+                variant="outline" 
+                className="w-full h-12 rounded-xl border-border/50 bg-card hover:bg-card/80 flex items-center gap-3 justify-center"
+                onClick={handleGoogleLogin}
+                disabled={isLoading}
+              >
+                 <Chrome size={20} />
+                 <span className="font-bold">Sign in with Google</span>
+              </Button>
+              
               <div className="bg-card/50 border border-border/50 rounded-2xl p-4 text-center">
                 <p className="text-sm text-muted-foreground mb-4">
-                  Connect your wallet or use social login (Google, Twitch, etc.)
+                  Or connect your Sui wallet directly
                 </p>
                 <div className="flex justify-center">
                   <ConnectButton className="w-full" />

@@ -45,20 +45,34 @@ export function DAppKitWrapper({ children }: { children: React.ReactNode }) {
     });
 
     const enokiApiKey = process.env.NEXT_PUBLIC_ENOKI_PUBLIC_KEY;
+    console.log("[DAppKitWrapper] Initializing Enoki with API Key present:", !!enokiApiKey);
     
     // Only register Enoki if a real API key is provided
     if (enokiApiKey && !enokiApiKey.includes("placeholder")) {
+      console.log("[DAppKitWrapper] Registering Enoki wallets...");
       const { unregister } = registerEnokiWallets({
         apiKey: enokiApiKey,
         providers: {
-          google: { clientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "placeholder_google_id" },
-          facebook: { clientId: process.env.NEXT_PUBLIC_FACEBOOK_CLIENT_ID || "placeholder_facebook_id" },
-          twitch: { clientId: process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID || "placeholder_twitch_id" }
+          google: { 
+            clientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "placeholder_google_id",
+            redirectUrl: window.location.origin,
+          },
+          facebook: { 
+            clientId: process.env.NEXT_PUBLIC_FACEBOOK_CLIENT_ID || "placeholder_facebook_id",
+            redirectUrl: window.location.origin,
+          },
+          twitch: { 
+            clientId: process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID || "placeholder_twitch_id",
+            redirectUrl: window.location.origin,
+          }
         },
         network: "testnet",
         client: enokiSuiClient as any // Cast to satisfy type if strict checking complains about specific client interface
       });
+      console.log("[DAppKitWrapper] Enoki wallets registered.");
       return () => unregister();
+    } else {
+      console.warn("[DAppKitWrapper] Enoki API Key missing or is placeholder. Skipping registration.");
     }
   }, []);
 
