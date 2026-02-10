@@ -12,6 +12,8 @@ interface AuthContextType {
     isConnected: boolean;
     userDataId: string | null;
     refreshUserData: () => Promise<void>;
+    isLoading: boolean;
+    refreshSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -25,6 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const [zkSession, setZkSession] = useState<{ jwt: string; address: string } | null>(null);
     const [userDataId, setUserDataId] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     const refreshUserData = useCallback(async () => {
         const address = currentAccount?.address || zkSession?.address;
@@ -51,30 +54,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     }, [currentAccount?.address, zkSession?.address]);
 
-    useEffect(() => {
-        const checkSession = async () => {
-            try {
-                const session = await enokiFlow.getSession();
-                if (session && session.jwt) {
-                    const keypair = await enokiFlow.getKeypair();
-                    const address = keypair.toSuiAddress();
-                    setZkSession({ jwt: session.jwt, address });
-                } else {
-                    setZkSession(null);
-                }
-            } catch (e) {
-                console.error("Failed to check Enoki session:", e);
+    const refreshSession = useCallback(async () => {
+        try {
+            const session = await enokiFlow.getSession();
+            if (session && session.jwt) {
+                const keypair = await enokiFlow.getKeypair({ network: 'testnet' });
+                const address = keypair.toSuiAddress();
+                setZkSession({ jwt: session.jwt, address });
+            } else {
                 setZkSession(null);
             }
-        };
+        } catch (e) {
+            console.error("Failed to check Enoki session:", e);
+            setZkSession(null);
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        refreshSession();
         
-        checkSession();
-        
-        const handleStorageChange = () => checkSession();
+        const handleStorageChange = () => refreshSession();
         window.addEventListener('storage', handleStorageChange);
         
         return () => window.removeEventListener('storage', handleStorageChange);
-    }, []);
+    }, [refreshSession]);
 
     // Refresh UserData when account changes - using an effect that only runs when addresses change
     const accountAddress = currentAccount?.address;
@@ -112,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isConnected = !!currentAccount || !!zkSession;
 
     return (
-        <AuthContext.Provider value={{ signOut, user, isConnected, userDataId, refreshUserData }}>
+        <AuthContext.Provider value={{ signOut, user, isConnected, userDataId, refreshUserData, isLoading, refreshSession }}>
             {children}
         </AuthContext.Provider>
     );

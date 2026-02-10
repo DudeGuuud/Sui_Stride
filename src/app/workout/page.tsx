@@ -26,11 +26,17 @@ import {
 } from "@mysten/dapp-kit-react";
 import { Transaction } from "@mysten/sui/transactions";
 import { useAuth } from "@/context/auth";
+import { SuiGrpcClient } from "@mysten/sui/grpc";
+import { enokiFlow } from "@/lib/enoki";
+import { getZkLoginSignature } from "@mysten/sui/zklogin";
+import { fromBase64 } from "@mysten/sui/utils";
 
 // Blockchain configuration from environment variables
 const PACKAGE_ID = process.env.NEXT_PUBLIC_SUI_PACKAGE_ID || "0x0";
 const PARTICIPANT_STORE_ID = process.env.NEXT_PUBLIC_SUI_PARTICIPANT_STORE_ID || "0x0";
 const STRIDE_MODULE = "core";
+const RPC_URL = process.env.NEXT_PUBLIC_SUI_TESTNET_URL || 'https://fullnode.testnet.sui.io:443';
+const suiClient = new SuiGrpcClient({ baseUrl: RPC_URL, network: 'testnet' });
 
 // Dynamically import Map to avoid SSR issues with Leaflet
 const MapComponent = dynamic(() => import("@/components/map-component"), {
@@ -93,7 +99,7 @@ export default function WorkoutTrackingPage() {
   }, [location, isTracking, steps, relativePoints]);
 
   const handleStartWorkout = async () => {
-    if (!isConnected || !userDataId) {
+    if (!isConnected || !userDataId || !user) {
       alert("Please connect wallet and register profile first.");
       return;
     }
@@ -110,12 +116,42 @@ export default function WorkoutTrackingPage() {
         ],
       });
 
-      const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      let result;
+      if (user.label === 'Google User') {
+         const session = await enokiFlow.getSession();
+         const keypair = await enokiFlow.getKeypair({ network: 'testnet' });
+         tx.setSender(user.address);
+         
+         const { bytes, signature: userSignature } = await tx.sign({ 
+            client: suiClient, 
+            signer: keypair 
+         });
+         
+         const proof = await enokiFlow.getProof({ network: 'testnet' });
+         if (!proof) throw new Error("Failed to get zkLogin proof");
+
+         const zkSignature = getZkLoginSignature({
+            inputs: {
+                ...proof,
+                addressSeed: proof.addressSeed 
+            },
+            maxEpoch: session?.maxEpoch || 0,
+            userSignature,
+         });
+         
+         result = await suiClient.executeTransaction({
+            transaction: fromBase64(bytes),
+            signatures: [zkSignature],
+            include: { effects: true }
+         });
+      } else {
+         result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      }
       
       // Find the Session object ID in created objects from effects
       let sessionId: string | undefined;
       if (result.$kind === 'Transaction') {
-        sessionId = result.Transaction.effects?.changedObjects.find(
+        sessionId = (result.Transaction.effects?.changedObjects || []).find(
           (obj) => obj.inputState === 'DoesNotExist'
         )?.objectId;
       }
@@ -136,7 +172,7 @@ export default function WorkoutTrackingPage() {
   };
 
   const handleEndWorkout = async () => {
-    if (!isConnected || !userDataId || !sessionId) {
+    if (!isConnected || !userDataId || !sessionId || !user) {
       alert("Incomplete session data.");
       return;
     }
@@ -171,9 +207,40 @@ export default function WorkoutTrackingPage() {
         ],
       });
 
-      const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      let result;
+      if (user && user.label === 'Google User') {
+         const session = await enokiFlow.getSession();
+         const keypair = await enokiFlow.getKeypair({ network: 'testnet' });
+         tx.setSender(user.address);
+         
+         const { bytes, signature: userSignature } = await tx.sign({ 
+            client: suiClient, 
+            signer: keypair 
+         });
+         
+         const proof = await enokiFlow.getProof({ network: 'testnet' });
+         if (!proof) throw new Error("Failed to get zkLogin proof");
+
+         const zkSignature = getZkLoginSignature({
+            inputs: {
+                ...proof,
+                addressSeed: proof.addressSeed 
+            },
+            maxEpoch: session?.maxEpoch || 0,
+            userSignature,
+         });
+         
+         result = await suiClient.executeTransaction({
+            transaction: fromBase64(bytes),
+            signatures: [zkSignature],
+            include: { effects: true }
+         });
+      } else {
+         result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      }
+
       console.log("Transaction successful:", result);
-      const digest = result.$kind === 'Transaction' ? result.Transaction.digest : 'Unknown';
+      const digest = result.$kind === 'Transaction' ? result.Transaction.digest : 'Unknown'; 
       alert(`Workout Complete and Verified on Sui!\nDigest: ${digest}`);
       router.back();
     } catch (err) {

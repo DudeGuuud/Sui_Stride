@@ -3,9 +3,11 @@
 import React, { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { enokiFlow } from "@/lib/enoki";
+import { useAuth } from "@/context/auth";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
+  const { refreshSession } = useAuth();
   const handledRef = useRef(false);
 
   useEffect(() => {
@@ -18,6 +20,10 @@ export default function AuthCallbackPage() {
         // Enoki SDK automatically parses the hash from window.location
         await enokiFlow.handleAuthCallback();
         console.log("Enoki auth callback handled successfully.");
+        
+        // Force context refresh so it picks up the new session immediately
+        await refreshSession();
+        
         router.push("/");
       } catch (error) {
         console.error("Error handling Enoki auth callback:", error);
@@ -27,7 +33,7 @@ export default function AuthCallbackPage() {
     }
 
     handleCallback();
-  }, [router]);
+  }, [router, refreshSession]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">

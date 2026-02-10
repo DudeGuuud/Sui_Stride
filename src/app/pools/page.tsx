@@ -13,6 +13,8 @@ import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
 import { useAuth } from "@/context/auth";
 import { useDAppKit } from "@mysten/dapp-kit-react";
 import { Transaction } from "@mysten/sui/transactions";
+import { enokiFlow } from "@/lib/enoki";
+import { getZkLoginSignature } from "@mysten/sui/zklogin";
 
 const PACKAGE_ID = process.env.NEXT_PUBLIC_SUI_PACKAGE_ID || "";
 const RPC_URL = process.env.NEXT_PUBLIC_SUI_TESTNET_URL || 'https://fullnode.testnet.sui.io:443';
@@ -98,7 +100,38 @@ export default function PoolsPage() {
         ],
       });
 
-      const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      let result;
+      if (user.label === 'Google User') {
+         const session = await enokiFlow.getSession();
+         const keypair = await enokiFlow.getKeypair({ network: 'testnet' });
+         tx.setSender(user.address);
+         
+         const { bytes, signature: userSignature } = await tx.sign({ 
+            client: suiClient, 
+            signer: keypair 
+         });
+         
+         const proof = await enokiFlow.getProof({ network: 'testnet' });
+         if (!proof) throw new Error("Failed to get zkLogin proof");
+
+         const zkSignature = getZkLoginSignature({
+            inputs: {
+                ...proof,
+                addressSeed: proof.addressSeed 
+            },
+            maxEpoch: session?.maxEpoch || 0,
+            userSignature,
+         });
+         
+         result = await suiClient.executeTransactionBlock({
+            transactionBlock: bytes,
+            signature: zkSignature,
+            options: { showEffects: true }
+         });
+      } else {
+         result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      }
+
       console.log("Staked successfully:", result);
       alert("Successfully joined the pool!");
       fetchPools();
