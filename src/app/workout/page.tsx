@@ -14,17 +14,18 @@ import {
   Play,
   Target,
   Wallet,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNativeLocation } from "@/hooks/use-native-location";
 import { StrideSegmenter, computeMerkleRoot } from "@/lib/stride-logic";
 import { 
-  useCurrentAccount, 
-  useDAppKit,
-  ConnectButton 
+  ConnectButton,
+  useDAppKit 
 } from "@mysten/dapp-kit-react";
 import { Transaction } from "@mysten/sui/transactions";
+import { useAuth } from "@/context/auth";
 
 // Blockchain configuration from environment variables
 const PACKAGE_ID = process.env.NEXT_PUBLIC_SUI_PACKAGE_ID || "0x0";
@@ -44,14 +45,15 @@ const MapComponent = dynamic(() => import("@/components/map-component"), {
 });
 
 export default function WorkoutTrackingPage() {
-  const currentAccount = useCurrentAccount();
+  const { user, isConnected, userDataId } = useAuth();
   const dAppKit = useDAppKit();
 
-  const [isTracking, setIsTracking] = useState(true);
+  const [isTracking, setIsTracking] = useState(false);
   const { location, path, relativePoints, distance, steps, errorMsg } = useNativeLocation(isTracking);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [recenterTrigger, setRecenterTrigger] = useState(0); // Trigger for map re-centering
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   
   // Anti-cheat tracking
   const segmenterRef = useRef<StrideSegmenter>(new StrideSegmenter("SESSION_NONCE_PLACEHOLDER"));
@@ -81,17 +83,61 @@ export default function WorkoutTrackingPage() {
         setRecenterTrigger(prev => prev + 1);
     }
 
-    if (relativePoints.length > 0 && isTracking && hasLocatedRef.current) {
-      const latest = relativePoints[relativePoints.length - 1];
+    if (location && isTracking && hasLocatedRef.current && relativePoints.length > 0) {
+      const relPoint = relativePoints[relativePoints.length - 1];
       const incrementalSteps = steps - lastSegmentStepsRef.current;
       const mockAccVar = 0.8; 
-      segmenterRef.current.addPoint(latest, incrementalSteps, mockAccVar);
+      segmenterRef.current.addPoint(relPoint, incrementalSteps, mockAccVar);
+      lastSegmentStepsRef.current = steps;
     }
-  }, [relativePoints, isTracking, steps]);
+  }, [location, isTracking, steps, relativePoints]);
+
+  const handleStartWorkout = async () => {
+    if (!isConnected || !userDataId) {
+      alert("Please connect wallet and register profile first.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // Start session on-chain
+      const tx = new Transaction();
+      tx.moveCall({
+        target: `${PACKAGE_ID}::${STRIDE_MODULE}::start_run`,
+        arguments: [
+          tx.object(PARTICIPANT_STORE_ID), // The Pool ID
+          tx.object('0x6'), // Clock
+        ],
+      });
+
+      const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      
+      // Find the Session object ID in created objects from effects
+      let sessionId: string | undefined;
+      if (result.$kind === 'Transaction') {
+        sessionId = result.Transaction.effects?.changedObjects.find(
+          (obj) => obj.inputState === 'DoesNotExist'
+        )?.objectId;
+      }
+
+      if (!sessionId) {
+        throw new Error("Failed to create session on-chain.");
+      }
+
+      setSessionId(sessionId);
+      setIsTracking(true);
+      console.log("Session started:", sessionId);
+    } catch (e) {
+      console.error("Failed to start run:", e);
+      alert("Failed to start run on-chain. Check if you joined the pool.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleEndWorkout = async () => {
-    if (!currentAccount) {
-      alert("Please connect your wallet first");
+    if (!isConnected || !userDataId || !sessionId) {
+      alert("Incomplete session data.");
       return;
     }
 
@@ -104,32 +150,31 @@ export default function WorkoutTrackingPage() {
       
       console.log("Workout Ended. Segments:", segments.length, "Root:", root);
 
-      if (PACKAGE_ID === "0x0") {
+      if (PACKAGE_ID === "0x0" || !PACKAGE_ID) {
         console.warn("Contract not deployed. Skipping Sui transaction.");
-        alert(`Workout Data Ready!\nDistance: ${(distance/1000).toFixed(2)}km\nMerkle Root: ${root}\n(Transaction skipped: Contract not deployed)`);
         router.back();
         return;
       }
 
       const tx = new Transaction();
+      
       tx.moveCall({
         target: `${PACKAGE_ID}::${STRIDE_MODULE}::submit_run_with_proof`,
         arguments: [
           tx.object(PARTICIPANT_STORE_ID),
-          tx.pure.string(root),
-          tx.pure.u64(Math.floor(distance)),
+          tx.object(userDataId),
+          tx.object(sessionId),
           tx.pure.u64(steps),
+          tx.pure.vector('u8', Array.from(new TextEncoder().encode(root))), // Merkle root bytes
+          tx.pure.vector('u8', []), // Placeholder signature
+          tx.object('0x6'), // Clock
         ],
       });
 
       const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
-      
-      if (result.FailedTransaction) {
-        throw new Error(`Transaction failed: ${result.FailedTransaction.status.error?.message}`);
-      }
-
       console.log("Transaction successful:", result);
-      alert(`Workout Complete and Verified on Sui!\nDigest: ${result.Transaction.digest}`);
+      const digest = result.$kind === 'Transaction' ? result.Transaction.digest : 'Unknown';
+      alert(`Workout Complete and Verified on Sui!\nDigest: ${digest}`);
       router.back();
     } catch (err) {
       console.error("Error ending workout:", err);
@@ -173,14 +218,21 @@ export default function WorkoutTrackingPage() {
       <header className="flex justify-between items-center py-2 mb-6">
         <div className="flex items-center gap-1">
           <span className="text-secondary text-[10px] uppercase font-bold tracking-widest">
-            (( )) SUI MAINNET
+            (( )) SUI TESTNET
           </span>
         </div>
         <span className="text-foreground text-xs font-bold tracking-[4px] uppercase">
           SuiStride
         </span>
         <div className="flex items-center gap-2">
-          <ConnectButton />
+          {user?.label === 'Google User' ? (
+             <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-full border border-primary/20">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-xs font-bold text-primary">Google User</span>
+             </div>
+          ) : (
+             <ConnectButton />
+          )}
         </div>
       </header>
 
@@ -197,7 +249,7 @@ export default function WorkoutTrackingPage() {
         </span>
       </div>
 
-      {!currentAccount && (
+      {!isConnected && (
         <div className="bg-secondary/10 border border-secondary/20 rounded-2xl p-4 mb-8 flex flex-row items-center gap-4">
           <Wallet className="text-secondary" size={24} />
           <div>
@@ -295,9 +347,18 @@ export default function WorkoutTrackingPage() {
       <div className="flex justify-center items-center gap-10 mb-10">
         <button
           className="w-14 h-14 rounded-full bg-card flex items-center justify-center border border-border hover:bg-card/80 transition-colors shadow-lg shadow-black/20 active:scale-95"
-          onClick={() => setIsTracking(!isTracking)}
+          onClick={() => {
+            if (!sessionId) {
+              handleStartWorkout();
+            } else {
+              setIsTracking(!isTracking);
+            }
+          }}
+          disabled={isSubmitting}
         >
-          {isTracking ? (
+          {isSubmitting ? (
+            <Loader2 className="animate-spin text-primary" size={24} />
+          ) : isTracking ? (
             <Pause size={24} className="text-foreground" />
           ) : (
             <Play size={24} className="text-foreground" />

@@ -5,9 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Chrome, Github, Lock, Mail, Wallet } from "lucide-react";
+import { Chrome } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/auth";
 import { ConnectButton } from "@mysten/dapp-kit-react";
 import { enokiFlow } from "@/lib/enoki";
@@ -30,8 +29,6 @@ const itemVariants = {
 export default function LoginPage() {
   const { isConnected } = useAuth();
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {

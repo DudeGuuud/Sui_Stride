@@ -67,8 +67,10 @@ export function DAppKitWrapper({ children }: { children: React.ReactNode }) {
           }
         },
         network: "testnet",
-        client: enokiSuiClient as any // Cast to satisfy type if strict checking complains about specific client interface
-      });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        client: enokiSuiClient as any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
       console.log("[DAppKitWrapper] Enoki wallets registered.");
       return () => unregister();
     } else {

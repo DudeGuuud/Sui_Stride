@@ -1,13 +1,59 @@
 "use client";
 
+
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Flame, Footprints, MapPin, Play, Trophy } from "lucide-react";
+import { Flame, Footprints, MapPin, Play, Trophy, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { useAuth } from "@/context/auth";
+import { useDAppKit } from "@mysten/dapp-kit-react";
+import { Transaction } from "@mysten/sui/transactions";
+import { SuiGrpcClient } from "@mysten/sui/grpc";
+
+const PACKAGE_ID = process.env.NEXT_PUBLIC_SUI_PACKAGE_ID || "";
+const RPC_URL = process.env.NEXT_PUBLIC_SUI_TESTNET_URL || 'https://fullnode.testnet.sui.io:443';
+const suiClient = new SuiGrpcClient({ baseUrl: RPC_URL, network: 'testnet' });
 
 export default function HomeDashboard() {
+  const { user, isConnected, userDataId, refreshUserData } = useAuth();
+  const dAppKit = useDAppKit();
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [balance, setBalance] = useState("0.00");
+
+  useEffect(() => {
+    if (user?.address) {
+      suiClient.getBalance({ owner: user.address }).then((b) => {
+        setBalance((Number(b.balance.balance) / 1e9).toFixed(2));
+      });
+    }
+  }, [user?.address]);
+
+  const handleRegister = async () => {
+    if (!isConnected || !user) return;
+    setIsRegistering(true);
+    try {
+      const tx = new Transaction();
+      tx.moveCall({
+        target: `${PACKAGE_ID}::core::create_user`,
+        arguments: [
+          tx.pure.vector('u8', []), // Empty pubkey for now
+        ],
+      });
+
+      const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      console.log("Registration successful:", result);
+      await refreshUserData();
+    } catch (e) {
+      console.error("Registration failed:", e);
+      alert("Registration failed. See console for details.");
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-background p-4 pb-20">
       {/* Header */}
@@ -24,16 +70,40 @@ export default function HomeDashboard() {
           </div>
           <div>
             <h1 className="text-foreground font-bold text-lg leading-tight">SuiStride</h1>
-            <span className="text-secondary text-xs font-medium">MAINNET</span>
+            <span className="text-secondary text-xs font-medium uppercase">Testnet</span>
           </div>
         </div>
         <div className="bg-card px-3 py-1.5 border border-border rounded-full flex items-center gap-2">
-          <span className="text-foreground text-xs font-mono">0x...A123</span>
+          <span className="text-foreground text-xs font-mono">
+            {user?.address ? `${user.address.slice(0, 6)}...${user.address.slice(-4)}` : "Disconnected"}
+          </span>
           <div className="w-6 h-6 rounded-full bg-muted overflow-hidden">
             <div className="w-full h-full bg-gradient-to-tr from-primary to-secondary" />
           </div>
         </div>
       </div>
+
+      {/* Registration Check */}
+      {isConnected && !userDataId && (
+        <Card className="bg-primary/10 border-2 border-primary/20 mb-6 overflow-hidden shadow-lg shadow-primary/5">
+          <CardContent className="p-6 flex flex-col items-center text-center">
+            <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center mb-4">
+              <UserPlus size={32} className="text-primary" />
+            </div>
+            <h2 className="text-foreground text-xl font-bold mb-2">Create Your Profile</h2>
+            <p className="text-muted-foreground text-sm mb-6 max-w-[280px]">
+              You haven&apos;t registered your SuiStride profile yet. Create it now to start tracking your runs on-chain.
+            </p>
+            <Button 
+              className="w-full h-12 rounded-xl bg-primary text-[#0A0E12] font-black uppercase tracking-tight"
+              onClick={handleRegister}
+              disabled={isRegistering}
+            >
+              {isRegistering ? "Registering..." : "Register Now"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Balance Card */}
       <Card className="bg-card border-none mb-6 overflow-hidden shadow-2xl shadow-primary/5 relative">
@@ -43,26 +113,27 @@ export default function HomeDashboard() {
           </span>
           <div className="flex items-baseline gap-2 mb-6">
             <span className="text-foreground text-5xl font-bold tracking-tighter">
-              1,240.50
+              {balance}
             </span>
             <span className="text-primary text-xl font-medium tracking-tight">
               SUI
             </span>
           </div>
           <div className="flex gap-2">
+            {user?.label === 'Google User' && (
+              <div className="bg-background/80 border border-border/50 px-2.5 py-1 rounded-lg">
+                <span className="text-muted-foreground text-[10px] font-medium">
+                  zkLogin active
+                </span>
+              </div>
+            )}
             <div className="bg-background/80 border border-border/50 px-2.5 py-1 rounded-lg">
               <span className="text-muted-foreground text-[10px] font-medium">
-                zkLogin active
-              </span>
-            </div>
-            <div className="bg-background/80 border border-border/50 px-2.5 py-1 rounded-lg">
-              <span className="text-muted-foreground text-[10px] font-medium">
-                v1.2.0
+                Sui Stride v1.0
               </span>
             </div>
           </div>
         </CardContent>
-        {/* Subtle glow effect */}
         <div className="absolute -right-20 -top-20 w-64 h-64 bg-primary/5 rounded-full blur-3xl" />
       </Card>
 
