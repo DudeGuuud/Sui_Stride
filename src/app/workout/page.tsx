@@ -20,9 +20,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNativeLocation } from "@/hooks/use-native-location";
 import { StrideSegmenter, computeMerkleRoot } from "@/lib/stride-logic";
-import { 
+import {
   ConnectButton,
-  useDAppKit 
+  useDAppKit
 } from "@mysten/dapp-kit-react";
 import { Transaction } from "@mysten/sui/transactions";
 import { useAuth } from "@/context/auth";
@@ -60,7 +60,7 @@ export default function WorkoutTrackingPage() {
   const [recenterTrigger, setRecenterTrigger] = useState(0); // Trigger for map re-centering
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  
+
   // Anti-cheat tracking
   const segmenterRef = useRef<StrideSegmenter>(new StrideSegmenter("SESSION_NONCE_PLACEHOLDER"));
   const lastSegmentStepsRef = useRef(0);
@@ -85,14 +85,14 @@ export default function WorkoutTrackingPage() {
   // Handle segmenting as points come in
   useEffect(() => {
     if (location && !hasLocatedRef.current) {
-        hasLocatedRef.current = true;
-        setRecenterTrigger(prev => prev + 1);
+      hasLocatedRef.current = true;
+      setRecenterTrigger(prev => prev + 1);
     }
 
     if (location && isTracking && hasLocatedRef.current && relativePoints.length > 0) {
       const relPoint = relativePoints[relativePoints.length - 1];
       const incrementalSteps = steps - lastSegmentStepsRef.current;
-      const mockAccVar = 0.8; 
+      const mockAccVar = 0.8;
       segmenterRef.current.addPoint(relPoint, incrementalSteps, mockAccVar);
       lastSegmentStepsRef.current = steps;
     }
@@ -118,36 +118,24 @@ export default function WorkoutTrackingPage() {
 
       let result;
       if (user.label === 'Google User') {
-         const session = await enokiFlow.getSession();
-         const keypair = await enokiFlow.getKeypair({ network: 'testnet' });
-         tx.setSender(user.address);
-         
-         const { bytes, signature: userSignature } = await tx.sign({ 
-            client: suiClient, 
-            signer: keypair 
-         });
-         
-         const proof = await enokiFlow.getProof({ network: 'testnet' });
-         if (!proof) throw new Error("Failed to get zkLogin proof");
+        const session = await enokiFlow.getSession();
+        const keypair = await enokiFlow.getKeypair({ network: 'testnet' });
+        tx.setSender(user.address);
 
-         const zkSignature = getZkLoginSignature({
-            inputs: {
-                ...proof,
-                addressSeed: proof.addressSeed 
-            },
-            maxEpoch: session?.maxEpoch || 0,
-            userSignature,
-         });
-         
-         result = await suiClient.executeTransaction({
-            transaction: fromBase64(bytes),
-            signatures: [zkSignature],
-            include: { effects: true }
-         });
+        const { bytes, signature: zkSignature } = await tx.sign({
+          client: suiClient,
+          signer: keypair
+        });
+
+        result = await suiClient.executeTransaction({
+          transaction: typeof bytes === 'string' ? fromBase64(bytes) : bytes,
+          signatures: [zkSignature],
+          include: { effects: true }
+        });
       } else {
-         result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+        result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
       }
-      
+
       // Find the Session object ID in created objects from effects
       let sessionId: string | undefined;
       if (result.$kind === 'Transaction') {
@@ -183,7 +171,7 @@ export default function WorkoutTrackingPage() {
     try {
       const segments = segmenterRef.current.getSegments();
       const root = await computeMerkleRoot(segments);
-      
+
       console.log("Workout Ended. Segments:", segments.length, "Root:", root);
 
       if (PACKAGE_ID === "0x0" || !PACKAGE_ID) {
@@ -193,7 +181,7 @@ export default function WorkoutTrackingPage() {
       }
 
       const tx = new Transaction();
-      
+
       tx.moveCall({
         target: `${PACKAGE_ID}::${STRIDE_MODULE}::submit_run_with_proof`,
         arguments: [
@@ -209,38 +197,26 @@ export default function WorkoutTrackingPage() {
 
       let result;
       if (user && user.label === 'Google User') {
-         const session = await enokiFlow.getSession();
-         const keypair = await enokiFlow.getKeypair({ network: 'testnet' });
-         tx.setSender(user.address);
-         
-         const { bytes, signature: userSignature } = await tx.sign({ 
-            client: suiClient, 
-            signer: keypair 
-         });
-         
-         const proof = await enokiFlow.getProof({ network: 'testnet' });
-         if (!proof) throw new Error("Failed to get zkLogin proof");
+        const session = await enokiFlow.getSession();
+        const keypair = await enokiFlow.getKeypair({ network: 'testnet' });
+        tx.setSender(user.address);
 
-         const zkSignature = getZkLoginSignature({
-            inputs: {
-                ...proof,
-                addressSeed: proof.addressSeed 
-            },
-            maxEpoch: session?.maxEpoch || 0,
-            userSignature,
-         });
-         
-         result = await suiClient.executeTransaction({
-            transaction: fromBase64(bytes),
-            signatures: [zkSignature],
-            include: { effects: true }
-         });
+        const { bytes, signature: zkSignature } = await tx.sign({
+          client: suiClient,
+          signer: keypair
+        });
+
+        result = await suiClient.executeTransaction({
+          transaction: typeof bytes === 'string' ? fromBase64(bytes) : bytes,
+          signatures: [zkSignature],
+          include: { effects: true }
+        });
       } else {
-         result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+        result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
       }
 
       console.log("Transaction successful:", result);
-      const digest = result.$kind === 'Transaction' ? result.Transaction.digest : 'Unknown'; 
+      const digest = result.$kind === 'Transaction' ? result.Transaction.digest : 'Unknown';
       alert(`Workout Complete and Verified on Sui!\nDigest: ${digest}`);
       router.back();
     } catch (err) {
@@ -293,12 +269,12 @@ export default function WorkoutTrackingPage() {
         </span>
         <div className="flex items-center gap-2">
           {user?.label === 'Google User' ? (
-             <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-full border border-primary/20">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-xs font-bold text-primary">Google User</span>
-             </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-full border border-primary/20">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-xs font-bold text-primary">Google User</span>
+            </div>
           ) : (
-             <ConnectButton />
+            <ConnectButton />
           )}
         </div>
       </header>
@@ -331,7 +307,7 @@ export default function WorkoutTrackingPage() {
         <MapComponent location={location} path={path} recenterTrigger={recenterTrigger} />
 
         <div className="absolute right-4 bottom-4 gap-3 flex flex-col z-[400]">
-          <button 
+          <button
             className="w-10 h-10 rounded-full bg-background/80 flex items-center justify-center border border-border hover:bg-background transition-colors active:scale-95"
             onClick={() => setRecenterTrigger(prev => prev + 1)}
           >

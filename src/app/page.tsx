@@ -47,34 +47,22 @@ export default function HomeDashboard() {
       });
 
       let result;
-      
+
       if (user.label === 'Google User') {
         console.log("Processing zkLogin transaction...");
         const session = await enokiFlow.getSession();
         if (!session) throw new Error("No Enoki session found");
-        
+
         const keypair = await enokiFlow.getKeypair({ network: 'testnet' });
         tx.setSender(user.address);
-        
-        const { bytes, signature: userSignature } = await tx.sign({ 
-          client: suiClient, 
-          signer: keypair 
-        });
-        
-        const proof = await enokiFlow.getProof({ network: 'testnet' });
-        if (!proof) throw new Error("Failed to get zkLogin proof");
 
-        const zkSignature = getZkLoginSignature({
-          inputs: {
-            ...proof,
-            addressSeed: proof.addressSeed 
-          },
-          maxEpoch: session.maxEpoch,
-          userSignature,
+        const { bytes, signature: zkSignature } = await tx.sign({
+          client: suiClient,
+          signer: keypair
         });
-        
+
         result = await suiClient.executeTransaction({
-          transaction: fromBase64(bytes),
+          transaction: typeof bytes === 'string' ? fromBase64(bytes) : bytes,
           signatures: [zkSignature],
           include: { effects: true }
         });
@@ -132,7 +120,7 @@ export default function HomeDashboard() {
             <p className="text-muted-foreground text-sm mb-6 max-w-[280px]">
               You haven&apos;t registered your SuiStride profile yet. Create it now to start tracking your runs on-chain.
             </p>
-            <Button 
+            <Button
               className="w-full h-12 rounded-xl bg-primary text-[#0A0E12] font-black uppercase tracking-tight"
               onClick={handleRegister}
               disabled={isRegistering}
