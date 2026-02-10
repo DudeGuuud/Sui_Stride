@@ -53,3 +53,28 @@
 body {
   @apply bg-background text-foreground antialiased;
 }
+
+/* Force dApp Kit Components to use Light Theme */
+mysten-dapp-kit-connect-modal,
+mysten-dapp-kit-connect-button,
+mysten-dapp-kit-wallet-list-item,
+mysten-dapp-kit-account-list-item {
+  --background: #ffffff !important;
+  --foreground: #000000 !important;
+  --dapp-kit-background: #ffffff !important;
+  --dapp-kit-foreground: #000000 !important;
+  --dapp-kit-primary: #000000 !important;
+  --dapp-kit-primary-foreground: #ffffff !important;
+  --dapp-kit-secondary: #f3f4f6 !important;
+  --dapp-kit-secondary-foreground: #111827 !important;
+  --dapp-kit-border: #e5e7eb !important;
+  --dapp-kit-muted: #f3f4f6 !important;
+  --dapp-kit-muted-foreground: #6b7280 !important;
+  --dapp-kit-accent: #f3f4f6 !important;
+  --dapp-kit-accent-foreground: #111827 !important;
+  --dapp-kit-popover: #ffffff !important;
+  --dapp-kit-popover-foreground: #000000 !important;
+  --dapp-kit-input: #e5e7eb !important;
+  --dapp-kit-ring: #000000 !important;
+  --dapp-kit-radius: 12px !important;
+}

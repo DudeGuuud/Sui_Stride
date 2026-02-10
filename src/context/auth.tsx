@@ -1,41 +1,30 @@
 "use client";
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useCurrentAccount } from '@mysten/dapp-kit-react';
 
 interface AuthContextType {
-    signIn: () => void;
-    signInWithGoogle: () => Promise<void>;
     signOut: () => void;
-    user: { name: string } | null;
+    user: { address: string; label?: string | null } | null;
+    isConnected: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState<{ name: string } | null>(null);
+    const currentAccount = useCurrentAccount();
     const router = useRouter();
 
-    const signIn = () => {
-        // Mock login
-        setUser({ name: 'Mock User' });
-        router.push('/');
-    };
-
-    const signInWithGoogle = async () => {
-        // Mock Google login behavior
-        console.log("Mock Google Login initiated");
-        setTimeout(() => {
-            signIn();
-        }, 1000);
-    };
-
     const signOut = () => {
-        setUser(null);
+        // Disconnect functionality is managed by the wallet extension or ConnectButton.
+        // Programmatic disconnect seems unavailable in this SDK version.
         router.push('/auth/login');
     };
 
+    const user = currentAccount ? { address: currentAccount.address, label: currentAccount.label } : null;
+
     return (
-        <AuthContext.Provider value={{ signIn, signInWithGoogle, signOut, user }}>
+        <AuthContext.Provider value={{ signOut, user, isConnected: !!currentAccount }}>
             {children}
         </AuthContext.Provider>
     );

@@ -1,11 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { AuthProvider } from "@/context/auth";
 import { RouteGuard } from "@/components/route-guard";
 import { createDAppKit, DAppKitProvider } from "@mysten/dapp-kit-react";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { registerEnokiWallets } from "@mysten/enoki";
 
 // 1. Configure Networks & dAppKit Instance
 const GRPC_URLS = {
@@ -36,6 +37,31 @@ declare module '@mysten/dapp-kit-react' {
 const queryClient = new QueryClient();
 
 export function DAppKitWrapper({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    // Create a client instance for Enoki wallet
+    const enokiSuiClient = new SuiGrpcClient({
+      network: 'testnet',
+      baseUrl: GRPC_URLS.testnet
+    });
+
+    const enokiApiKey = process.env.NEXT_PUBLIC_ENOKI_PUBLIC_KEY;
+    
+    // Only register Enoki if a real API key is provided
+    if (enokiApiKey && !enokiApiKey.includes("placeholder")) {
+      const { unregister } = registerEnokiWallets({
+        apiKey: enokiApiKey,
+        providers: {
+          google: { clientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "placeholder_google_id" },
+          facebook: { clientId: process.env.NEXT_PUBLIC_FACEBOOK_CLIENT_ID || "placeholder_facebook_id" },
+          twitch: { clientId: process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID || "placeholder_twitch_id" }
+        },
+        network: "testnet",
+        client: enokiSuiClient as any // Cast to satisfy type if strict checking complains about specific client interface
+      });
+      return () => unregister();
+    }
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <DAppKitProvider dAppKit={dappKit}>

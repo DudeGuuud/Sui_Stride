@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Chrome, Github, Lock, Mail, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/auth";
+import { ConnectButton } from "@mysten/dapp-kit-react";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -25,23 +27,23 @@ const itemVariants = {
 } as const;
 
 export default function LoginPage() {
-  const { signIn, signInWithGoogle } = useAuth();
+  const { isConnected } = useAuth();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = async (provider?: string) => {
-    console.log(`Logging in with ${provider || "email"}`);
-    setIsLoading(true);
-
-    if (provider === "google") {
-        await signInWithGoogle();
-        return;
+  useEffect(() => {
+    if (isConnected) {
+      router.push('/');
     }
+  }, [isConnected, router]);
 
-    // Mock network delay for effect
+  const handleEmailLogin = () => {
+    setIsLoading(true);
     setTimeout(() => {
-      signIn();
+      setIsLoading(false);
+      alert("Email login not implemented yet");
     }, 1500);
   };
 
@@ -88,34 +90,16 @@ export default function LoginPage() {
             <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest text-center mb-6">
               Log in with zkLogin
             </p>
-            <div className="flex gap-4 mb-4">
-              <Button
-                variant="outline"
-                className="flex-1 h-14 rounded-2xl border-border/50 bg-card/50 flex gap-3 hover:bg-card/80"
-                onClick={() => handleLogin("google")}
-                disabled={isLoading}
-              >
-                <Chrome size={20} color="#EA4335" />
-                <span className="text-foreground font-bold">Google</span>
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1 h-14 rounded-2xl border-border/50 bg-card/50 flex gap-3 hover:bg-card/80"
-                disabled={isLoading}
-              >
-                <Github size={20} className="text-foreground" />
-                <span className="text-foreground font-bold">Github</span>
-              </Button>
+            <div className="flex flex-col gap-4 mb-4">
+              <div className="bg-card/50 border border-border/50 rounded-2xl p-4 text-center">
+                <p className="text-sm text-muted-foreground mb-4">
+                  Connect your wallet or use social login (Google, Twitch, etc.)
+                </p>
+                <div className="flex justify-center">
+                  <ConnectButton className="w-full" />
+                </div>
+              </div>
             </div>
-            <Button
-              variant="outline"
-              className="w-full h-14 rounded-2xl border-primary/30 bg-primary/5 flex gap-3 mb-6 hover:bg-primary/10"
-              onClick={() => handleLogin("sui")}
-              disabled={isLoading}
-            >
-              <Wallet size={20} color="#00E5FF" />
-              <span className="text-primary font-bold">Connect Sui Wallet</span>
-            </Button>
           </motion.div>
 
           <motion.div
@@ -168,7 +152,7 @@ export default function LoginPage() {
           <motion.div variants={itemVariants} className="w-full">
             <Button
               className="w-full h-16 rounded-[24px] bg-primary shadow-xl shadow-primary/30 mb-8 hover:bg-primary/90 text-[#0A0E12] text-lg font-black uppercase tracking-tight"
-              onClick={() => handleLogin("email")}
+              onClick={handleEmailLogin}
               disabled={isLoading}
             >
               {isLoading ? (
