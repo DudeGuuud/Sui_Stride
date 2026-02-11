@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { StyleSheet, SafeAreaView, Platform, StatusBar } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
@@ -12,6 +12,14 @@ const WEB_APP_URL = process.env.EXPO_PUBLIC_WEB_APP_URL || 'http://localhost:300
 export default function App() {
   const webViewRef = useRef<WebView>(null);
   const { location } = useLocationTracking(true);
+  const [nativeRedirectUrl, setNativeRedirectUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Generate the dynamic redirect URL (exp:// in Dev, suistride:// in Prod)
+    const url = Linking.createURL('auth-callback');
+    setNativeRedirectUrl(url);
+    console.log("Native Redirect URL:", url);
+  }, []);
 
   // Send GPS data to Web
   useEffect(() => {
@@ -27,8 +35,15 @@ export default function App() {
     try {
       const data = JSON.parse(event.nativeEvent.data);
 
-      if (data.type === 'WEB_READY') {
-        console.log('Web App Ready');
+      // Web App requests the redirect URL on mount
+      if (data.type === 'GET_REDIRECT_URL' || data.type === 'WEB_READY') {
+        console.log('Web requested Redirect URL');
+        if (nativeRedirectUrl) {
+           webViewRef.current?.postMessage(JSON.stringify({
+             type: 'SET_REDIRECT_URL',
+             url: nativeRedirectUrl
+           }));
+        }
       }
 
       if (data.type === 'HAPTICS_IMPACT') {
@@ -37,19 +52,22 @@ export default function App() {
 
       if (data.type === 'OPEN_AUTH') {
         const { url } = data;
-        const redirectUrl = Linking.createURL('auth-callback');
         
-        console.log("Opening Auth Session:", url);
-        console.log("Redirect URL:", redirectUrl);
+        // Use the dynamic URL we generated. This ensures WebBrowser closes automatically.
+        const redirectUrl = nativeRedirectUrl || Linking.createURL('auth-callback');
+        
+        console.log("Opening Auth Session in System Browser:", url);
+        console.log("Expecting Redirect to:", redirectUrl);
 
+        // Open System Browser
         const result = await WebBrowser.openAuthSessionAsync(url, redirectUrl);
         
         if (result.type === 'success' && result.url) {
-          console.log("Auth Success:", result.url);
+          console.log("Auth Success, Redirected Back:", result.url);
           // Send the full callback URL back to the WebView to parse
           webViewRef.current?.postMessage(JSON.stringify({
-            type: 'AUTH_RESULT',
-            url: result.url
+             type: 'AUTH_RESULT',
+             url: result.url
           }));
         } else {
           console.log("Auth Cancelled or Failed", result.type);
@@ -80,6 +98,11 @@ export default function App() {
         domStorageEnabled={true}
         allowsInlineMediaPlayback={true}
         showsVerticalScrollIndicator={false}
+        // Injected JS to announce readiness
+        injectedJavaScript={`
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'WEB_READY' }));
+          true;
+        `}
       />
     </SafeAreaView>
   );

@@ -18,11 +18,6 @@ export default function AuthCallbackPage() {
     async function handleCallback() {
       try {
         // Enoki SDK automatically parses the hash from window.location
-        // It requires the ephemeral key to be in storage.
-        // If this is running in the System Browser (Native Flow), storage is empty.
-        // If running in WebView (Web Flow or Native result), storage has the key.
-        
-        // We attempt to handle it.
         await enokiFlow.handleAuthCallback();
         console.log("Enoki auth callback handled successfully.");
         
@@ -31,17 +26,28 @@ export default function AuthCallbackPage() {
       } catch (error) {
         console.error("Error handling Enoki auth callback:", error);
         
-        // If error (likely missing session key) and we have a hash,
-        // we might be in the System Browser. Try relaying to Native App.
-        if (window.location.hash) {
-           console.log("Attempting to relay to native app...");
-           // Construct deep link with the same hash
-           // We use the scheme defined in app.json
+        // Check if we are in System Browser (Native Flow)
+        // If error (likely missing session key) and we have a hash or search params
+        if (window.location.hash || window.location.search) {
+           const params = new URLSearchParams(window.location.search);
+           const state = params.get('state');
+
+           // If we have a dynamic redirect URL in state (from Native App via LoginPage), use it.
+           // This handles Expo Go (exp://) and Production (suistride://) seamlessly.
+           if (state && (state.startsWith('exp://') || state.startsWith('suistride://'))) {
+               console.log("Redirecting to dynamic Native App URL:", state);
+               // Reconstruct full URL to pass back to app
+               const redirectUrl = `${state}${window.location.search}${window.location.hash}`;
+               window.location.href = redirectUrl;
+               return;
+           }
+
+           console.log("Attempting fallback relay to native app...");
+           // Fallback to hardcoded scheme if no state provided (might fail in Expo Go Tunnel)
            const deepLink = `suistride://auth-callback${window.location.search}${window.location.hash}`;
            window.location.href = deepLink;
            
-           // Show a message to the user
-           return; // Stay on page (or show "Return to App")
+           return; 
         }
 
         router.push("/auth/login");

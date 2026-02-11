@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Flame, Footprints, MapPin, Play, Trophy, UserPlus, ArrowRight } from "lucide-react";
+import { Flame, Footprints, MapPin, Play, Trophy, UserPlus, ArrowRight, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -65,12 +65,21 @@ export default function HomeDashboard() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [balance, setBalance] = useState("0.00");
   const [strdBalance, setStrdBalance] = useState("0.00");
+  const [isCopied, setIsCopied] = useState(false);
 
   // Active Pool State
   const [activePool, setActivePool] = useState<ActivePool | null>(null);
 
   // Fallback if no pool is active
   const DEFAULT_TARGET_STEPS = 10000;
+
+  const handleCopyAddress = () => {
+    if (user?.address) {
+      navigator.clipboard.writeText(user.address);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    }
+  };
 
   const fetchActivePool = useCallback(async () => {
     try {
@@ -288,10 +297,18 @@ export default function HomeDashboard() {
             <span className="text-secondary text-xs font-medium uppercase">Testnet</span>
           </div>
         </div>
-        <div className="bg-card px-3 py-1.5 border border-border rounded-full flex items-center gap-2">
+        <div 
+          className="bg-card px-3 py-1.5 border border-border rounded-full flex items-center gap-2 cursor-pointer active:scale-95 transition-transform"
+          onClick={handleCopyAddress}
+        >
           <span className="text-foreground text-xs font-mono">
             {user?.address ? `${user.address.slice(0, 6)}...${user.address.slice(-4)}` : "Disconnected"}
           </span>
+          {isCopied ? (
+            <Check size={14} className="text-green-500" />
+          ) : (
+            <Copy size={14} className="text-muted-foreground" />
+          )}
           <div className="w-6 h-6 rounded-full bg-muted overflow-hidden">
             <div className="w-full h-full bg-gradient-to-tr from-primary to-secondary" />
           </div>

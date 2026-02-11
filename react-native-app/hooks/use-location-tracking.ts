@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Platform, PermissionsAndroid } from 'react-native';
-import Geolocation, { GeoPosition, GeoError } from 'react-native-geolocation-service';
+import * as Location from 'expo-location';
 import { Pedometer } from 'expo-sensors';
 
 export interface LocationData {
@@ -63,93 +62,70 @@ export const useLocationTracking = (tracking: boolean = true) => {
 
   // Geolocation Setup
   useEffect(() => {
-    let watchId: number | null = null;
-
-    const requestPermissions = async () => {
-      if (Platform.OS === 'ios') {
-        const auth = await Geolocation.requestAuthorization("whenInUse");
-        if (auth === "granted") return true;
-      }
-
-      if (Platform.OS === 'android') {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-          {
-            title: "Location Permission",
-            message: "We need access to your location to track your run.",
-            buttonNeutral: "Ask Me Later",
-            buttonNegative: "Cancel",
-            buttonPositive: "OK"
-          }
-        );
-        if (granted === PermissionsAndroid.RESULTS.GRANTED) return true;
-      }
-      return false;
-    };
+    let locationSubscription: Location.LocationSubscription | null = null;
 
     const startTracking = async () => {
-      const hasPermission = await requestPermissions();
-      if (!hasPermission) {
-        setErrorMsg('Location permission denied');
-        return;
-      }
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setErrorMsg('Location permission denied');
+          return;
+        }
 
-      if (tracking) {
-        watchId = Geolocation.watchPosition(
-          (position: GeoPosition) => {
-            const { latitude, longitude, speed, accuracy } = position.coords;
+        if (tracking) {
+          locationSubscription = await Location.watchPositionAsync(
+            {
+              accuracy: Location.Accuracy.BestForNavigation,
+              timeInterval: 1000,
+              distanceInterval: 0,
+            },
+            (position) => {
+              const { latitude, longitude, speed, accuracy } = position.coords;
 
-            // Filter 1: Accuracy Check
-            if (accuracy > 200) {
-              return;
-            }
-
-            // Filter 2: Stationary Drift Check
-            if (lastLocationRef.current) {
-              const dist = calculateDistance(
-                lastLocationRef.current.latitude,
-                lastLocationRef.current.longitude,
-                latitude,
-                longitude
-              );
-              if (dist < 1) {
+              // Filter 1: Accuracy Check (accuracy is in meters, lower is better)
+              if (accuracy && accuracy > 200) {
                 return;
               }
+
+              // Filter 2: Stationary Drift Check
+              if (lastLocationRef.current) {
+                const dist = calculateDistance(
+                  lastLocationRef.current.latitude,
+                  lastLocationRef.current.longitude,
+                  latitude,
+                  longitude
+                );
+                // If moved less than 1 meter, ignore (drift)
+                if (dist < 1) {
+                  return;
+                }
+              }
+
+              const validLocation: LocationData = {
+                latitude,
+                longitude,
+                speed,
+                accuracy,
+                timestamp: position.timestamp,
+                steps: currentStepsRef.current,
+              };
+
+              lastLocationRef.current = validLocation;
+              setLocation(validLocation);
             }
-
-            const validLocation: LocationData = {
-              latitude,
-              longitude,
-              speed,
-              accuracy,
-              timestamp: position.timestamp,
-              steps: currentStepsRef.current,
-            };
-
-            lastLocationRef.current = validLocation;
-            setLocation(validLocation);
-          },
-          (error: GeoError) => {
-            console.log(error.code, error.message);
-            setErrorMsg(error.message);
-          },
-          { 
-            enableHighAccuracy: true, 
-            distanceFilter: 0, 
-            interval: 1000, 
-            fastestInterval: 500,
-            showLocationDialog: true,
-            forceRequestLocation: true
-          }
-        );
+          );
+        }
+      } catch (error) {
+        console.error("Location tracking error:", error);
+        setErrorMsg("Error starting location tracking");
       }
     };
 
     startTracking();
 
     return () => {
-      if (watchId !== null) {
-        Geolocation.clearWatch(watchId);
+      if (locationSubscription) {
+        locationSubscription.remove();
       }
     };
   }, [tracking]);
