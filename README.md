@@ -45,7 +45,7 @@ Our anti-cheating system is divided into two layers: client-side data processing
     -   The advantages of this design are immense: it dramatically reduces gas costs for the user and avoids congesting the Sui network. The smart contract only needs to store this "digital fingerprint" to cryptographically commit to the entire workout session.
     -   In the future, if a dispute arises, a verifier (either us or the community) can run an off-chain verification program. A user would only need to provide the raw data for a specific `RunSegment` and its corresponding Merkle proof to validate it against the on-chain root, enabling trustless arbitration.
 
-```graph-lr
+```mermaid
 graph TD
     A[Raw GPS Data] --> B{Kalman Filter};
     B --> C[Relative Positioning & Segmentation];
@@ -90,7 +90,9 @@ We use a modern tech stack to ensure development efficiency and a high-quality u
         -   **`useLocationTracking`**: Accesses the native GPS module for more accurate and power-efficient location data than a browser can provide.
         -   **`WebBrowser.openAuthSessionAsync`**: Calls a native browser window to handle the ZKLogin OAuth flow, providing better security and user experience than a WebView redirect.
 
-```graph-lr
+```mermaid
+graph LR
+
 subgraph "User's Device"
     direction LR
     subgraph "React Native App (Expo)"
@@ -109,7 +111,7 @@ end
 
 A -- "Renders In" --> B
 C -- "Provides GPS & Auth UI" --> A
-B -- "postMessage Bridge" -- C
+B -- "postMessage Bridge" --> C
 A -- "Executes Transactions" --> E
 A -- "Handles Auth Flow" --> F
 ```
