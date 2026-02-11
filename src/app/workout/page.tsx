@@ -24,6 +24,7 @@ import {
   ConnectButton,
   useDAppKit
 } from "@mysten/dapp-kit-react";
+import { useSearchParams } from "next/navigation";
 import { Transaction } from "@mysten/sui/transactions";
 import { useAuth } from "@/context/auth";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
@@ -60,6 +61,10 @@ export default function WorkoutTrackingPage() {
   const [recenterTrigger, setRecenterTrigger] = useState(0); // Trigger for map re-centering
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+
+  const searchParams = useSearchParams();
+  const poolId = searchParams.get('pool') || process.env.NEXT_PUBLIC_SUI_PARTICIPANT_STORE_ID || "0x0";
+  const coinType = searchParams.get('type') || `${PACKAGE_ID}::strd::STRD`;
 
   // Anti-cheat tracking
   const segmenterRef = useRef<StrideSegmenter>(new StrideSegmenter("SESSION_NONCE_PLACEHOLDER"));
@@ -110,8 +115,9 @@ export default function WorkoutTrackingPage() {
       const tx = new Transaction();
       tx.moveCall({
         target: `${PACKAGE_ID}::${STRIDE_MODULE}::start_run`,
+        typeArguments: [coinType],
         arguments: [
-          tx.object(PARTICIPANT_STORE_ID), // The Pool ID
+          tx.object(poolId), // The Pool ID
           tx.object('0x6'), // Clock
         ],
       });
@@ -184,8 +190,9 @@ export default function WorkoutTrackingPage() {
 
       tx.moveCall({
         target: `${PACKAGE_ID}::${STRIDE_MODULE}::submit_run_with_proof`,
+        typeArguments: [coinType],
         arguments: [
-          tx.object(PARTICIPANT_STORE_ID),
+          tx.object(poolId),
           tx.object(userDataId),
           tx.object(sessionId),
           tx.pure.u64(steps),

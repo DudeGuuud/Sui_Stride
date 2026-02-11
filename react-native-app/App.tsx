@@ -5,7 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { useLocationTracking } from './hooks/use-location-tracking';
 
 // Use environment variable with EXPO_PUBLIC_ prefix for Expo
-const WEB_APP_URL = process.env.EXPO_PUBLIC_WEB_APP_URL || 'http://localhost:3000'; 
+const WEB_APP_URL = process.env.EXPO_PUBLIC_WEB_APP_URL || 'http://localhost:3000';
 
 export default function App() {
   const webViewRef = useRef<WebView>(null);
@@ -16,9 +16,9 @@ export default function App() {
     if (location && webViewRef.current) {
       const script = `
         window.postMessage(${JSON.stringify({
-          type: 'LOCATION_UPDATE',
-          payload: location,
-        })}, '*');
+        type: 'LOCATION_UPDATE',
+        payload: location,
+      })}, '*');
         true;
       `;
       webViewRef.current.injectJavaScript(script);
@@ -28,11 +28,11 @@ export default function App() {
   const handleMessage = (event: WebViewMessageEvent) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      
+
       if (data.type === 'WEB_READY') {
         console.log('Web App Ready');
       }
-      
+
       if (data.type === 'HAPTICS_IMPACT') {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
@@ -56,6 +56,7 @@ export default function App() {
         style={styles.webview}
         onMessage={handleMessage}
         onError={handleError}
+        userAgent="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36 ReactNativeWebView"
         javaScriptEnabled={true}
         domStorageEnabled={true}
         allowsInlineMediaPlayback={true}

@@ -25,26 +25,49 @@ export default function HomeDashboard() {
   const dAppKit = useDAppKit();
   const [isRegistering, setIsRegistering] = useState(false);
   const [balance, setBalance] = useState("0.00");
+  const [strdBalance, setStrdBalance] = useState("0.00");
 
   useEffect(() => {
     if (user?.address) {
       suiClient.getBalance({ owner: user.address }).then((b) => {
         setBalance((Number(b.balance.balance) / 1e9).toFixed(2));
       });
+      // Fetch STRD balance
+      suiClient.listCoins({
+        owner: user.address,
+        coinType: `${PACKAGE_ID}::strd::STRD`
+      }).then((coins) => {
+        const total = coins.objects.reduce((acc, coin) => acc + Number(coin.balance), 0);
+        setStrdBalance((total / 1e9).toFixed(2));
+      });
     }
-  }, [user?.address]);
+  }, [user?.address, PACKAGE_ID]);
+
+  const FAUCET_ID = process.env.NEXT_PUBLIC_SUI_FAUCET_ID || "";
 
   const handleRegister = async () => {
     if (!isConnected || !user) return;
     setIsRegistering(true);
     try {
       const tx = new Transaction();
+
+      // 1. Create User
       tx.moveCall({
         target: `${PACKAGE_ID}::core::create_user`,
         arguments: [
-          tx.pure.vector('u8', []), // Empty pubkey for now
+          tx.pure.vector('u8', []),
         ],
       });
+
+      // 2. Claim Welcome Bonus
+      if (FAUCET_ID) {
+        tx.moveCall({
+          target: `${PACKAGE_ID}::strd::claim_bonus`,
+          arguments: [
+            tx.object(FAUCET_ID),
+          ],
+        });
+      }
 
       let result;
 
@@ -72,6 +95,8 @@ export default function HomeDashboard() {
 
       console.log("Registration successful:", result);
       await refreshUserData();
+      // Force refresh to update balances as requested
+      window.location.reload();
     } catch (e) {
       console.error("Registration failed:", e);
       alert("Registration failed. See console for details.");
@@ -131,37 +156,42 @@ export default function HomeDashboard() {
         </Card>
       )}
 
-      {/* Balance Card */}
-      <Card className="bg-card border-none mb-6 overflow-hidden shadow-2xl shadow-primary/5 relative">
-        <CardContent className="p-6 relative z-10">
-          <span className="text-primary text-[10px] font-bold uppercase tracking-widest mb-2 block">
-            SUI Balance
-          </span>
-          <div className="flex items-baseline gap-2 mb-6">
-            <span className="text-foreground text-5xl font-bold tracking-tighter">
-              {balance}
+      {/* Balances */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <Card className="bg-card border-none overflow-hidden shadow-xl shadow-primary/5 relative">
+          <CardContent className="p-4 relative z-10">
+            <span className="text-primary text-[10px] font-bold uppercase tracking-widest mb-1 block">
+              SUI Balance
             </span>
-            <span className="text-primary text-xl font-medium tracking-tight">
-              SUI
-            </span>
-          </div>
-          <div className="flex gap-2">
-            {user?.label === 'Google User' && (
-              <div className="bg-background/80 border border-border/50 px-2.5 py-1 rounded-lg">
-                <span className="text-muted-foreground text-[10px] font-medium">
-                  zkLogin active
-                </span>
-              </div>
-            )}
-            <div className="bg-background/80 border border-border/50 px-2.5 py-1 rounded-lg">
-              <span className="text-muted-foreground text-[10px] font-medium">
-                Sui Stride v1.0
+            <div className="flex items-baseline gap-1">
+              <span className="text-foreground text-3xl font-bold tracking-tighter">
+                {balance}
+              </span>
+              <span className="text-primary text-xs font-medium uppercase tracking-tight">
+                SUI
               </span>
             </div>
-          </div>
-        </CardContent>
-        <div className="absolute -right-20 -top-20 w-64 h-64 bg-primary/5 rounded-full blur-3xl" />
-      </Card>
+          </CardContent>
+          <div className="absolute -right-10 -top-10 w-32 h-32 bg-primary/5 rounded-full blur-2xl" />
+        </Card>
+
+        <Card className="bg-card border-none overflow-hidden shadow-xl shadow-secondary/5 relative">
+          <CardContent className="p-4 relative z-10">
+            <span className="text-secondary text-[10px] font-bold uppercase tracking-widest mb-1 block">
+              STRD Balance
+            </span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-foreground text-3xl font-bold tracking-tighter">
+                {strdBalance}
+              </span>
+              <span className="text-secondary text-xs font-medium uppercase tracking-tight">
+                STRD
+              </span>
+            </div>
+          </CardContent>
+          <div className="absolute -right-10 -top-10 w-32 h-32 bg-secondary/5 rounded-full blur-2xl" />
+        </Card>
+      </div>
 
       {/* Today's Activity */}
       <div className="mb-8">

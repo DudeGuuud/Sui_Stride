@@ -42,7 +42,11 @@ export default function CreatePoolDrawer({ isOpen, onClose }: CreatePoolDrawerPr
   const [stakeAmount, setStakeAmount] = useState("");
   const [targetDistance, setTargetDistance] = useState("");
   const [duration, setDuration] = useState("");
+  const [coinType, setCoinType] = useState<"SUI" | "STRD">("STRD");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const STRD_TYPE = `${PACKAGE_ID}::strd::STRD`;
+  const SUI_TYPE = `0x2::sui::SUI`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,27 +57,38 @@ export default function CreatePoolDrawer({ isOpen, onClose }: CreatePoolDrawerPr
 
     setIsSubmitting(true);
     try {
-      // Find STRD coins
-      const coins = await suiClient.listCoins({
-        owner: user.address,
-        coinType: `${PACKAGE_ID}::strd::STRD`
-      });
-
-      if (coins.objects.length === 0) {
-        throw new Error("You don't have any STRD coins. Get some from the faucet first!");
-      }
+      const finalTitle = title.trim() || "SuiStride Challenge";
+      const finalDuration = duration.trim() || "24";
+      const finalStakeAmount = stakeAmount.trim() || "1";
 
       const tx = new Transaction();
-      // Convert stakeAmount to MIST (1e9)
-      const mistAmount = Math.floor(Number(stakeAmount) * 1e9);
-      // Convert hrs to seconds
-      const durationSecs = Math.floor(Number(duration || 0) * 3600);
+      const mistAmount = Math.floor(Number(finalStakeAmount) * 1e9);
+      if (mistAmount <= 0) throw new Error("Stake amount must be greater than 0");
 
-      const [payment] = tx.splitCoins(tx.object(coins.objects[0].objectId), [mistAmount]);
+      const durationSecs = Math.floor(Number(finalDuration) * 3600);
+      if (durationSecs <= 0) throw new Error("Duration must be at least 1 hour");
+
+      const selectedCoinType = coinType === "SUI" ? SUI_TYPE : STRD_TYPE;
+
+      let payment;
+      if (coinType === "SUI") {
+        payment = tx.splitCoins(tx.gas, [mistAmount]);
+      } else {
+        const coins = await suiClient.listCoins({
+          owner: user.address,
+          coinType: STRD_TYPE
+        });
+        if (coins.objects.length === 0) {
+          throw new Error("You don't have any STRD coins. Register to get some!");
+        }
+        payment = tx.splitCoins(tx.object(coins.objects[0].objectId), [mistAmount]);
+      }
 
       tx.moveCall({
         target: `${PACKAGE_ID}::core::create_pool`,
+        typeArguments: [selectedCoinType],
         arguments: [
+          tx.pure.vector('u8', Array.from(new TextEncoder().encode(finalTitle))),
           payment,
           tx.pure.u64(durationSecs),
           tx.object('0x6'), // Clock
@@ -103,11 +118,8 @@ export default function CreatePoolDrawer({ isOpen, onClose }: CreatePoolDrawerPr
       console.log("Pool launched successfully:", result);
       alert("Pool launched successfully!");
       onClose();
-      // Reset form
-      setTitle("");
-      setStakeAmount("");
-      setTargetDistance("");
-      setDuration("");
+      // Force refresh as requested by user
+      window.location.reload();
     } catch (err) {
       console.error("Failed to launch pool:", err);
       alert("Failed to launch pool. See console for details.");
@@ -171,7 +183,29 @@ export default function CreatePoolDrawer({ isOpen, onClose }: CreatePoolDrawerPr
 
             <div className="flex flex-col gap-2">
               <label className="text-muted-foreground text-[10px] font-bold uppercase tracking-wider">
-                Stake Amount (SUI)
+                Staking Asset
+              </label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  onClick={() => setCoinType("SUI")}
+                  className={`flex-1 h-12 rounded-2xl border-none font-bold transition-all ${coinType === "SUI" ? "bg-primary text-[#0A0E12]" : "bg-card text-muted-foreground hover:bg-card/80"}`}
+                >
+                  SUI
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setCoinType("STRD")}
+                  className={`flex-1 h-12 rounded-2xl border-none font-bold transition-all ${coinType === "STRD" ? "bg-secondary text-[#0A0E12]" : "bg-card text-muted-foreground hover:bg-card/80"}`}
+                >
+                  STRD
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-muted-foreground text-[10px] font-bold uppercase tracking-wider">
+                Stake Amount ({coinType})
               </label>
               <div className="relative">
                 <Input
@@ -181,7 +215,7 @@ export default function CreatePoolDrawer({ isOpen, onClose }: CreatePoolDrawerPr
                   onChange={(e) => setStakeAmount(e.target.value)}
                   className="bg-card border-none h-12 text-foreground pl-10 rounded-2xl"
                 />
-                <Coins size={18} className="absolute left-3 top-3 text-primary" />
+                <Coins size={18} className={`absolute left-3 top-3 ${coinType === "SUI" ? "text-primary" : "text-secondary"}`} />
               </div>
             </div>
 

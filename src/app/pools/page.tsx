@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, HelpCircle, Coins, Users, Clock, Plus, Loader2 } from "lucide-react";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import CreatePoolDrawer from "@/components/create-pool-drawer";
+import { ClaimModal } from "@/components/claim-modal";
 import { AnimatePresence } from "framer-motion";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { SuiGraphQLClient } from "@mysten/sui/graphql";
@@ -31,21 +32,39 @@ export default function PoolsPage() {
 
   const [activeTab, setActiveTab] = useState("Global");
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
-  const [pools, setPools] = useState<{ id: string; title: string; pool: string; participants: number; timeLeft: string; image: string }[]>([]);
+  const [pools, setPools] = useState<{ id: string; title: string; pool: string; participants: number; timeLeft: string; image: string; coinType: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isStaking, setIsStaking] = useState<string | null>(null);
+  const [selectedClaimPool, setSelectedClaimPool] = useState<any>(null);
+  const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
 
   const fetchPools = async () => {
     setIsLoading(true);
     try {
       const result = await graphqlClient.query({
         query: `
-          query QueryPools($type: String!) {
-            objects(filter: { type: $type }) {
+          query QueryPools($suiPoolType: String!, $strdPoolType: String!) {
+            suiPools: objects(filter: { type: $suiPoolType }) {
               nodes {
                 address
                 asMoveObject {
                   contents {
+                    type {
+                      repr
+                    }
+                    json
+                  }
+                }
+              }
+            }
+            strdPools: objects(filter: { type: $strdPoolType }) {
+              nodes {
+                address
+                asMoveObject {
+                  contents {
+                    type {
+                      repr
+                    }
                     json
                   }
                 }
@@ -54,23 +73,90 @@ export default function PoolsPage() {
           }
         `,
         variables: {
-          type: `${PACKAGE_ID}::core::StakingPool`
+          suiPoolType: `${PACKAGE_ID}::core::StakingPool<0x2::sui::SUI>`,
+          strdPoolType: `${PACKAGE_ID}::core::StakingPool<${PACKAGE_ID}::strd::STRD>`
         }
       });
 
-      const mappedPools = (result.data as any).objects.nodes.map((node: any) => {
-        const fields = node.asMoveObject.contents.json;
+      if (result.errors) {
+        console.error("GraphQL Query Error:", result.errors[0]?.message || "Unknown error");
+        setPools([]);
+        return;
+      }
+
+      const data = result.data as any;
+      const allNodes = [
+        ...(data?.suiPools?.nodes || []),
+        ...(data?.strdPools?.nodes || [])
+      ];
+
+      const mappedPools = allNodes.map((node: any) => {
+        const moveObj = node.asMoveObject;
+        const fields = moveObj?.contents?.json;
+        const fullType = moveObj?.contents?.type?.repr;
+        if (!fields || !fullType) return null;
+
+        // Helper to extract string from Move String struct if needed
+        const extractStr = (val: any) => {
+          if (typeof val === 'string') return val;
+          if (val && typeof val === 'object' && val.bytes) return val.bytes;
+          return String(val || "");
+        };
+
+        const poolName = extractStr(fields.name) || ("SuiStride Challenge");
+
+        // Extract coin type from StakingPool<T>
+        const coinType = fullType.match(/<(.+)>$/)?.[1] || "";
+        const isSuiPool = coinType === "0x2::sui::SUI";
+        const symbol = isSuiPool ? "SUI" : "STRD";
+
+        const createdAt = Number(fields.created_at || 0);
+        const durationSecs = Number(fields.duration_secs || 0);
+
+        let timeLeftStr = "Active";
+        let isEnded = false;
+        if (createdAt > 0 && durationSecs > 0) {
+          const durationMs = durationSecs * 1000;
+          const endTime = createdAt + durationMs;
+          const now = Date.now();
+          const diff = endTime - now;
+
+          if (diff > 0) {
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            timeLeftStr = hours > 0 ? `${hours}h ${mins}m left` : `${mins}m left`;
+          } else {
+            timeLeftStr = "Ended";
+            isEnded = true;
+          }
+        }
+
+        const participants = fields.participants || [];
+        const isJoined = Array.isArray(participants) && participants.some((p: any) => {
+          const pAddr = p.user_id || p.fields?.user_id || p;
+          return pAddr === user?.address;
+        });
+
         return {
           id: node.address,
-          title: "SuiStride Sprint",
-          pool: (Number(fields.strd_treasury) / 1e9).toFixed(0) + " STRD",
-          participants: (fields.participants as unknown[])?.length || 0,
-          timeLeft: "Active",
-          image: "https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?w=800&h=400&fit=crop",
+          title: poolName,
+          pool: (Number(fields.strd_treasury || 0) / 1e9).toFixed(0) + " " + symbol,
+          participants: participants.length,
+          timeLeft: timeLeftStr,
+          isEnded,
+          isJoined,
+          isFinalized: !!fields.finalized,
+          coinType: coinType,
+          createdAtRaw: createdAt,
+          image: "",
+          jsonFields: fields, // Pass full fields for modal
         };
-      });
+      }).filter(Boolean);
 
-      setPools(mappedPools);
+      // Sort by newest first
+      mappedPools.sort((a: any, b: any) => b.createdAtRaw - a.createdAtRaw);
+
+      setPools(mappedPools as any);
     } catch (e) {
       console.error("Error fetching pools:", e);
     } finally {
@@ -92,25 +178,51 @@ export default function PoolsPage() {
       return;
     }
 
+    const pool = pools.find(p => p.id === poolId);
+    if (!pool) return;
+
     setIsStaking(poolId);
     try {
-      // Find STRD coins
-      const coins = await suiClient.listCoins({
-        owner: user.address,
-        coinType: `${PACKAGE_ID}::strd::STRD`
-      });
+      const tx = new Transaction();
+      // Join with 1.0 tokens by default instead of 10.0 to ensure new users with 10 tokens can join multiple pools
+      const amount = 1 * 1e9;
 
-      if (coins.objects.length === 0) {
-        throw new Error("You don't have any STRD coins to stake. Get some from the faucet first!");
+      let payment;
+      if (pool.coinType === "0x2::sui::SUI") {
+        payment = tx.splitCoins(tx.gas, [amount]);
+      } else {
+        // Find STRD coins and merge if necessary
+        const coins = await suiClient.listCoins({
+          owner: user.address,
+          coinType: pool.coinType
+        });
+
+        if (coins.objects.length === 0) {
+          throw new Error(`You don't have any coins of type ${pool.coinType} to stake.`);
+        }
+
+        // Check total balance
+        const total = coins.objects.reduce((acc, c) => acc + Number(c.balance), 0);
+        if (total < amount) {
+          throw new Error(`Insufficient ${pool.title} balance. You have ${(total / 1e9).toFixed(2)} tokens.`);
+        }
+
+        if (coins.objects.length > 1) {
+          const [primary, ...rest] = coins.objects;
+          tx.mergeCoins(tx.object(primary.objectId), rest.map(c => tx.object(c.objectId)));
+          payment = tx.splitCoins(tx.object(primary.objectId), [amount]);
+        } else {
+          payment = tx.splitCoins(tx.object(coins.objects[0].objectId), [amount]);
+        }
       }
 
-      const tx = new Transaction();
       tx.moveCall({
         target: `${PACKAGE_ID}::core::stake`,
+        typeArguments: [pool.coinType],
         arguments: [
           tx.object(poolId),
           tx.object(userDataId),
-          tx.object(coins.objects[0].objectId),
+          payment,
           tx.object('0x6'), // Clock
         ],
       });
@@ -137,7 +249,8 @@ export default function PoolsPage() {
 
       console.log("Staked successfully:", result);
       alert("Successfully joined the pool!");
-      fetchPools();
+      // Force refresh as requested by user
+      window.location.reload();
     } catch (e) {
       console.error("Staking failed:", e);
       alert(e instanceof Error ? e.message : "Staking failed.");
@@ -171,7 +284,7 @@ export default function PoolsPage() {
 
           {/* Segmented Control */}
           <div className="flex bg-card p-1 rounded-xl mb-6">
-            {["Global", "Friends"].map((tab) => (
+            {["Global", "Joined"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -182,7 +295,7 @@ export default function PoolsPage() {
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {tab}
+                {tab === "Joined" ? "My Pools" : tab}
               </button>
             ))}
           </div>
@@ -193,26 +306,19 @@ export default function PoolsPage() {
               <Loader2 className="animate-spin text-primary mb-4" size={40} />
               <p className="text-muted-foreground text-sm">Loading on-chain pools...</p>
             </div>
-          ) : activeTab === "Global" ? (
-            pools.length > 0 ? (
-              pools.map((pool) => (
+          ) : (
+            (activeTab === "Global" ? pools : pools.filter((p: any) => p.isJoined)).length > 0 ? (
+              (activeTab === "Global" ? pools : pools.filter((p: any) => p.isJoined)).map((pool: any) => (
                 <Card key={pool.id} className="bg-card border-none mb-6 overflow-hidden shadow-lg shadow-black/20">
-                  <div className="relative h-48 w-full">
-                    <Image
-                      src={pool.image}
-                      alt={pool.title}
-                      fill
-                      className="object-cover"
-                    />
-                    <div className="absolute top-4 left-4">
-                      <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide shadow-sm bg-secondary text-secondary-foreground">
-                        LIVE NOW
+                  <CardContent className="p-5">
+                    <div className="flex justify-between items-start mb-4">
+                      <span className={cn(
+                        "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide",
+                        pool.isEnded ? "bg-muted text-muted-foreground" : "bg-secondary text-secondary-foreground"
+                      )}>
+                        {pool.timeLeft}
                       </span>
                     </div>
-                    <div className="absolute inset-0 bg-black/20" />
-                  </div>
-
-                  <CardContent className="p-5">
                     <div className="flex justify-between items-end gap-4">
                       <div className="flex-1 min-w-0">
                         <h3 className="text-foreground text-xl font-bold mb-2 truncate">{pool.title}</h3>
@@ -227,19 +333,42 @@ export default function PoolsPage() {
                           </div>
                           <div className="flex items-center gap-1">
                             <Clock size={14} className="text-muted-foreground" />
-                            <span className="text-muted-foreground text-xs">{pool.timeLeft}</span>
+                            <span className="text-muted-foreground text-xs">{pool.coinType.includes("SUI") ? "SUI" : "STRD"}</span>
                           </div>
                         </div>
                       </div>
 
                       <Button
-                        className="h-10 px-6 rounded-xl bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-opacity shrink-0"
-                        onClick={() => handleJoin(pool.id)}
-                        disabled={isStaking === pool.id}
+                        size="sm"
+                        onClick={() => {
+                          if (pool.isEnded && pool.isJoined) {
+                            setSelectedClaimPool(pool);
+                            setIsClaimModalOpen(true);
+                          } else {
+                            handleJoin(pool.id);
+                          }
+                        }}
+                        disabled={isStaking === pool.id || (pool.isEnded && !pool.isJoined) || (pool.isJoined && !pool.isEnded)}
+                        className={cn(
+                          "h-10 px-6 rounded-xl font-bold transition-all shadow-lg",
+                          pool.isEnded && !pool.isJoined
+                            ? "bg-muted text-muted-foreground border-none cursor-not-allowed"
+                            : pool.isJoined && !pool.isEnded
+                              ? "bg-secondary text-secondary-foreground cursor-default"
+                              : pool.isEnded && pool.isJoined
+                                ? "bg-yellow-400 text-black shadow-yellow-400/20 hover:shadow-yellow-400/40 hover:scale-105 active:scale-95"
+                                : "bg-primary text-[#0A0E12] shadow-primary/20 hover:shadow-primary/40 active:scale-[0.98]"
+                        )}
                       >
-                        <span className="text-[#0A0E12] font-bold">
-                          {isStaking === pool.id ? "JOINING..." : "JOIN"}
-                        </span>
+                        {isStaking === pool.id ? (
+                          <Loader2 className="animate-spin" size={18} />
+                        ) : pool.isEnded ? (
+                          pool.isJoined ? (pool.isFinalized ? "Claimed" : "Claim") : "Ended"
+                        ) : pool.isJoined ? (
+                          "Joined"
+                        ) : (
+                          "Join"
+                        )}
                       </Button>
                     </div>
                   </CardContent>
@@ -247,14 +376,9 @@ export default function PoolsPage() {
               ))
             ) : (
               <div className="text-center py-20 text-muted-foreground">
-                No pools found on-chain. Create one!
+                {activeTab === "Global" ? "No active pools found." : "You haven't joined any pools yet."}
               </div>
             )
-          ) : (
-            <div className="flex flex-col gap-6 items-center justify-center py-10 text-muted-foreground">
-              <p>No active friend challenges.</p>
-              <Button variant="outline">Invite Friends</Button>
-            </div>
           )}
         </div>
       </div>
@@ -278,6 +402,17 @@ export default function PoolsPage() {
           />
         )}
       </AnimatePresence>
+
+      <ClaimModal
+        isOpen={isClaimModalOpen}
+        onClose={() => setIsClaimModalOpen(false)}
+        pool={selectedClaimPool}
+        userAddress={user?.address || ""}
+        onSuccess={() => {
+          fetchPools();
+          window.location.reload();
+        }}
+      />
     </div>
   );
 }
