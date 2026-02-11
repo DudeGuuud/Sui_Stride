@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { StyleSheet, SafeAreaView, Platform, StatusBar, View, Text } from 'react-native';
+import React, { useRef, useEffect, useMemo } from 'react';
+import { StyleSheet, SafeAreaView, Platform, StatusBar } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
@@ -11,14 +11,12 @@ const WEB_APP_URL = process.env.EXPO_PUBLIC_WEB_APP_URL || 'http://localhost:300
 
 export default function App() {
   const webViewRef = useRef<WebView>(null);
-  const { location, errorMsg } = useLocationTracking(true);
-  const [nativeRedirectUrl, setNativeRedirectUrl] = useState<string | null>(null);
-
-  useEffect(() => {
+  const { location } = useLocationTracking(true);
+  const nativeRedirectUrl = useMemo(() => {
     // Generate the dynamic redirect URL (exp:// in Dev, suistride:// in Prod)
     const url = Linking.createURL('auth-callback');
-    setNativeRedirectUrl(url);
     console.log("Native Redirect URL:", url);
+    return url;
   }, []);
 
   // Send GPS data to Web
@@ -113,17 +111,6 @@ export default function App() {
           true;
         `}
       />
-      {/* --- On-screen Debug View --- */}
-      <View style={styles.debugContainer}>
-        <Text style={styles.debugText}>RN GPS DEBUG:</Text>
-        <Text style={styles.debugText}>
-          Lat: {location ? location.latitude.toFixed(4) : '...'}
-        </Text>
-        <Text style={styles.debugText}>
-          Lon: {location ? location.longitude.toFixed(4) : '...'}
-        </Text>
-        {errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
-      </View>
     </SafeAreaView>
   );
 }
@@ -137,24 +124,4 @@ const styles = StyleSheet.create({
   webview: {
     flex: 1,
   },
-  debugContainer: {
-    position: 'absolute',
-    bottom: 80,
-    left: 10,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    padding: 8,
-    borderRadius: 5,
-    zIndex: 999,
-  },
-  debugText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  errorText: {
-    color: 'red',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginTop: 4,
-  }
 });

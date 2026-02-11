@@ -25,11 +25,11 @@ import {
   ConnectButton,
   useDAppKit
 } from "@mysten/dapp-kit-react";
+import { enokiFlow } from "@/lib/enoki";
 import { Transaction } from "@mysten/sui/transactions";
 import { useAuth } from "@/context/auth";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { SuiGraphQLClient } from "@mysten/sui/graphql";
-import { enokiFlow } from "@/lib/enoki";
 import { fromBase64 } from "@mysten/sui/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
@@ -39,6 +39,7 @@ const STRIDE_MODULE = "core";
 const RPC_URL = process.env.NEXT_PUBLIC_SUI_TESTNET_URL || 'https://fullnode.testnet.sui.io:443';
 const GRAPHQL_URL = process.env.NEXT_PUBLIC_SUI_GRAPHQL_URL || 'https://graphql.testnet.sui.io/graphql';
 
+// Use the full SuiClient for robust transaction queries
 const suiClient = new SuiGrpcClient({ baseUrl: RPC_URL, network: 'testnet' });
 const graphqlClient = new SuiGraphQLClient({ url: GRAPHQL_URL, network: 'testnet' });
 
@@ -359,39 +360,37 @@ export default function WorkoutTrackingPage() {
       } else {
         result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
       }
+      
+      const digest = result.$kind === 'Transaction' ? result.Transaction?.digest : null;
 
-      // Find the Session object ID in created objects from effects
+      if (!digest) {
+        throw new Error("Transaction was signed but digest was not found in the result.");
+      }
+
+      // Use getTransactionBlock to get the finalized details with a reliable structure
+      const txDetails = await suiClient.getTransaction({
+        digest: digest,
+        include: { effects: true, objectTypes: true },
+      });
+
       let sessionId: string | undefined;
-      
-      const txResult = result as unknown as TxResultHelper;
-      
-      if (txResult.$kind === 'Transaction' && txResult.Transaction?.effects?.created) {
-         const created = txResult.Transaction.effects.created;
-         if (created.length > 0) {
-             sessionId = created[0].reference.objectId;
-         }
-      } else if (txResult.effects?.created) {
-         // Fallback
-         const created = txResult.effects.created;
-         if (created.length > 0) {
-             sessionId = created[0].reference.objectId;
-         }
-      }
 
-      // Fallback/Alternative way if the above structure is different in current SDK
-      if (!sessionId && txResult.objectChanges) {
-         const created = txResult.objectChanges.filter((c) => c.type === 'created');
-         if (created.length > 0) {
-           sessionId = created[0].objectId;
-         }
+      if (txDetails.$kind === 'Transaction' && txDetails.Transaction.effects?.changedObjects) {
+        // Find the 'created' object that is a 'Session' type
+        const sessionObject = txDetails.Transaction.effects.changedObjects.find(
+          (change) =>
+            change.idOperation === 'Created' &&
+            change.outputState === 'ObjectWrite' &&
+            txDetails.Transaction.objectTypes?.[change.objectId!]?.endsWith('::core::Session'),
+        );
+        if (sessionObject) {
+          sessionId = sessionObject.objectId;
+        }
       }
-
 
       if (!sessionId) {
-        // If we still can't find it, we might need to query owned objects or events.
-        // For now, let's assume it worked but warn if we can't track it.
-        // But we NEED sessionId for the end transaction.
-        throw new Error("Failed to retrieve Session ID from transaction effects.");
+        console.log("DEBUG: Raw transaction details from getTransactionBlock:", JSON.stringify(txDetails, null, 2));
+        throw new Error("Failed to find created Session object in getTransactionBlock response.");
       }
 
       setSessionId(sessionId);
@@ -399,7 +398,8 @@ export default function WorkoutTrackingPage() {
       console.log("Session started:", sessionId);
     } catch (e) {
       console.error("Failed to start run:", e);
-      alert("Failed to start run on-chain. Check if you joined the pool.");
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      alert(`Failed to start run on-chain. Reason: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -473,9 +473,8 @@ export default function WorkoutTrackingPage() {
       router.push('/'); // Go back to dashboard to see updated stats
     } catch (err) {
       console.error("Error ending workout:", err);
-      // Wait, if it failed, we shouldn't just lose data?
-      // For now alert, but ideally we save locally in repo
-      alert(err instanceof Error ? err.message : "Failed to submit run to blockchain.");
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      alert(`Failed to submit run to blockchain. Reason: ${errorMessage}`);
       setIsSubmitting(false);
     }
   };
