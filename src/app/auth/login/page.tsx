@@ -121,16 +121,9 @@ export default function LoginPage() {
          url = `${url}${separator}state=${encodeURIComponent(nativeRedirectUrl)}`;
       }
       
-      if (window.ReactNativeWebView) {
-        // Send to Native App to open in System Browser
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'OPEN_AUTH',
-          url: url
-        }));
-        // We stay on this page loading until we get AUTH_RESULT back
-      } else {
-        window.location.href = url;
-      }
+      // Force direct navigation in WebView (User Agent spoofing handles the rest)
+      window.location.href = url;
+
     } catch (error) {
       console.error("Google login error:", error);
       setIsLoading(false);
