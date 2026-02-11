@@ -114,6 +114,19 @@ export function useNativeLocation(isActive: boolean) {
       timestamp: number,
       newSteps?: number
     ) => {
+      // Always update current location for map visualization (even if not tracking)
+      const point: LocationPoint = {
+        latitude,
+        longitude,
+        timestamp: timestamp || Date.now(),
+        speed: speed || 0,
+        accuracy,
+        steps: newSteps,
+      };
+      
+      setLocation(point);
+
+      // Only record path and data if tracking is active
       if (!isActiveRef.current) return;
 
       // Filter 1: Accuracy check (skip if > 200m)
@@ -125,15 +138,11 @@ export function useNativeLocation(isActive: boolean) {
       if (newSteps !== undefined) {
         setSteps(newSteps);
       }
-
-      const point: LocationPoint = {
-        latitude,
-        longitude,
-        timestamp: timestamp || Date.now(),
-        speed: relPoint.v, // Use filtered velocity
-        accuracy,
-        steps: newSteps,
-      };
+      
+      // Update point with filtered speed/data if needed, but we already setLocation above.
+      // Actually, for the path, we might want the filtered version? 
+      // Let's keep using 'point' constructed above for visual path too, 
+      // but use 'relPoint' for logic/repo.
 
       const currentPath = pathRef.current;
       const currentRel = relativeRef.current;
@@ -148,7 +157,7 @@ export function useNativeLocation(isActive: boolean) {
 
         distDelta = dist;
         setDistance((prev) => prev + dist);
-        setLocation(point);
+        // setLocation(point); // Already done above
 
         const newPath = [...currentPath, point];
         pathRef.current = newPath;
@@ -158,8 +167,8 @@ export function useNativeLocation(isActive: boolean) {
         relativeRef.current = newRel;
         setRelativePoints(newRel);
       } else {
-        // First point
-        setLocation(point);
+        // First point of the TRACKED session
+        // setLocation(point); // Already done above
         setPath([point]);
         pathRef.current = [point];
 
