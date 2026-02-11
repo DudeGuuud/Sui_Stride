@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -15,10 +15,7 @@ import {
   Target,
   Wallet,
   Loader2,
-  ChevronLeft,
-  Footprints,
-  MapPin,
-  Trophy
+  ChevronLeft
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,13 +31,6 @@ import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { SuiGraphQLClient } from "@mysten/sui/graphql";
 import { enokiFlow } from "@/lib/enoki";
 import { fromBase64 } from "@mysten/sui/utils";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 // Blockchain configuration from environment variables
@@ -64,6 +54,54 @@ const MapComponent = dynamic(() => import("@/components/map-component"), {
   ),
 });
 
+interface PoolOption {
+  id: string;
+  title: string;
+  coinType: string;
+}
+
+interface PoolFields {
+  name?: string | { bytes: string };
+  created_at?: string;
+  duration_secs?: string;
+  finalized?: boolean;
+  participants?: Array<{
+    user_id?: string;
+    steps?: string;
+    fields?: {
+      user_id?: string;
+      steps?: string;
+    };
+  }>;
+}
+
+interface PoolNode {
+  address: string;
+  asMoveObject: {
+    contents: {
+      type: {
+        repr: string;
+      };
+      json: PoolFields;
+    };
+  };
+}
+
+interface TxResultHelper {
+  $kind?: string;
+  Transaction?: {
+    effects?: {
+      created?: { reference: { objectId: string } }[];
+    };
+    digest?: string;
+  };
+  effects?: {
+    created?: { reference: { objectId: string } }[];
+  };
+  objectChanges?: { type: string; objectId: string }[];
+  digest?: string;
+}
+
 export default function WorkoutTrackingPage() {
   const { user, isConnected, userDataId } = useAuth();
   const dAppKit = useDAppKit();
@@ -80,7 +118,7 @@ export default function WorkoutTrackingPage() {
   const [poolTitle, setPoolTitle] = useState<string>("Free Run");
 
   // Pool Selection UI State
-  const [joinedPools, setJoinedPools] = useState<any[]>([]);
+  const [joinedPools, setJoinedPools] = useState<PoolOption[]>([]);
   const [showPoolSelector, setShowPoolSelector] = useState(false);
   const [isLoadingPools, setIsLoadingPools] = useState(false);
 
@@ -101,45 +139,29 @@ export default function WorkoutTrackingPage() {
   const weightKg = 70; // User weight
   const calories = (distance / 1000) * weightKg * 1.036;
 
-  // Fetch Pool Metadata if ID is present
-  useEffect(() => {
-    if (paramPoolId) {
-      // Just set ID, we could fetch title async if needed, but for now defaults or fetched later
-      // We'll try to fetch title for better UX
-      fetchPoolTitle(paramPoolId);
-    } else {
-      // No pool ID? Trigger selector logic
-      if (isConnected && user) {
-        fetchJoinedPools();
-      }
-    }
-  }, [paramPoolId, isConnected, user]);
-
-  const fetchPoolTitle = async (id: string) => {
+  const fetchPoolTitle = useCallback(async (id: string) => {
     try {
       const obj = await suiClient.getObject({
         objectId: id,
         include: { json: true }
       });
-      if (obj.object.json) {
-        const fields = obj.object.json as any;
-        // Handle different string representations
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((obj as any).object?.json) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fields = (obj as any).object.json as any;
         const name = fields.name;
         let title = "Challenge";
         if (typeof name === 'string') title = name;
         else if (name && typeof name === 'object' && name.bytes) title = new TextDecoder().decode(Uint8Array.from(name.bytes));
-        // Note: Move String is usually { bytes: [...] } or just string in JSON
-        // If it's pure string in JSON
-        if (typeof fields.name === 'string') title = fields.name;
-
+        
         setPoolTitle(title);
       }
     } catch (e) {
       console.error("Failed to fetch pool title", e);
     }
-  };
+  }, []);
 
-  const fetchJoinedPools = async () => {
+  const fetchJoinedPools = useCallback(async () => {
     setIsLoadingPools(true);
     try {
       const result = await graphqlClient.query({
@@ -184,20 +206,21 @@ export default function WorkoutTrackingPage() {
         return;
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = result.data as any;
-      const allNodes = [
+      const allNodes: PoolNode[] = [
         ...(data?.suiPools?.nodes || []),
         ...(data?.strdPools?.nodes || [])
       ];
 
-      const myPools = allNodes.map((node: any) => {
+      const myPools = allNodes.map((node) => {
         const moveObj = node.asMoveObject;
         const fields = moveObj?.contents?.json;
         const fullType = moveObj?.contents?.type?.repr;
         if (!fields || !fullType) return null;
 
         // Helper to extract string
-        const extractStr = (val: any) => {
+        const extractStr = (val: string | { bytes: string } | undefined) => {
           if (typeof val === 'string') return val;
           if (val && typeof val === 'object' && val.bytes) return val.bytes;
           return String(val || "");
@@ -208,6 +231,7 @@ export default function WorkoutTrackingPage() {
 
         // Check if joined
         const participants = fields.participants || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const isJoined = Array.isArray(participants) ? participants.some((p: any) => {
           const pAddr = p.user_id || p.fields?.user_id || p;
           return pAddr === user?.address;
@@ -222,8 +246,8 @@ export default function WorkoutTrackingPage() {
           id: node.address,
           title: poolName,
           coinType
-        };
-      }).filter(Boolean);
+        } as PoolOption;
+      }).filter((p): p is PoolOption => p !== null);
 
       setJoinedPools(myPools);
       if (myPools.length > 0) {
@@ -242,8 +266,21 @@ export default function WorkoutTrackingPage() {
     } finally {
       setIsLoadingPools(false);
     }
-  };
+  }, [user?.address, router]);
 
+  // Fetch Pool Metadata if ID is present
+  useEffect(() => {
+    if (paramPoolId) {
+      // Just set ID, we could fetch title async if needed, but for now defaults or fetched later
+      // We'll try to fetch title for better UX
+      fetchPoolTitle(paramPoolId);
+    } else {
+      // No pool ID? Trigger selector logic
+      if (isConnected && user) {
+        fetchJoinedPools();
+      }
+    }
+  }, [paramPoolId, isConnected, user, fetchPoolTitle, fetchJoinedPools]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -304,6 +341,8 @@ export default function WorkoutTrackingPage() {
       let result;
       if (user.label === 'Google User') {
         const session = await enokiFlow.getSession();
+        if (!session) throw new Error("No Enoki session found");
+        
         const keypair = await enokiFlow.getKeypair({ network: 'testnet' });
         tx.setSender(user.address);
 
@@ -323,14 +362,36 @@ export default function WorkoutTrackingPage() {
 
       // Find the Session object ID in created objects from effects
       let sessionId: string | undefined;
-      if (result.$kind === 'Transaction') {
-        sessionId = (result.Transaction.effects?.changedObjects || []).find(
-          (obj) => obj.inputState === 'DoesNotExist'
-        )?.objectId;
+      
+      const txResult = result as unknown as TxResultHelper;
+      
+      if (txResult.$kind === 'Transaction' && txResult.Transaction?.effects?.created) {
+         const created = txResult.Transaction.effects.created;
+         if (created.length > 0) {
+             sessionId = created[0].reference.objectId;
+         }
+      } else if (txResult.effects?.created) {
+         // Fallback
+         const created = txResult.effects.created;
+         if (created.length > 0) {
+             sessionId = created[0].reference.objectId;
+         }
       }
 
+      // Fallback/Alternative way if the above structure is different in current SDK
+      if (!sessionId && txResult.objectChanges) {
+         const created = txResult.objectChanges.filter((c) => c.type === 'created');
+         if (created.length > 0) {
+           sessionId = created[0].objectId;
+         }
+      }
+
+
       if (!sessionId) {
-        throw new Error("Failed to create session on-chain.");
+        // If we still can't find it, we might need to query owned objects or events.
+        // For now, let's assume it worked but warn if we can't track it.
+        // But we NEED sessionId for the end transaction.
+        throw new Error("Failed to retrieve Session ID from transaction effects.");
       }
 
       setSessionId(sessionId);
@@ -384,6 +445,8 @@ export default function WorkoutTrackingPage() {
       let result;
       if (user && user.label === 'Google User') {
         const session = await enokiFlow.getSession();
+        if (!session) throw new Error("No Enoki session found");
+        
         const keypair = await enokiFlow.getKeypair({ network: 'testnet' });
         tx.setSender(user.address);
 
@@ -402,7 +465,10 @@ export default function WorkoutTrackingPage() {
       }
 
       console.log("Transaction successful:", result);
-      const digest = result.$kind === 'Transaction' ? result.Transaction.digest : 'Unknown';
+      
+      const txRes = result as unknown as TxResultHelper;
+      const digest = txRes.digest || (txRes.$kind === 'Transaction' ? txRes.Transaction?.digest : 'Unknown');
+      
       alert(`Workout Complete and Verified on Sui!\nDigest: ${digest}`);
       router.push('/'); // Go back to dashboard to see updated stats
     } catch (err) {

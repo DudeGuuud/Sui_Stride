@@ -27,7 +27,7 @@ const itemVariants = {
 } as const;
 
 export default function LoginPage() {
-  const { isConnected } = useAuth();
+  const { isConnected, refreshSession } = useAuth();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -37,10 +37,38 @@ export default function LoginPage() {
     }
   }, [isConnected, router]);
 
+  useEffect(() => {
+    // Listen for AUTH_RESULT from Native App
+    const handleAuthResult = async (event: MessageEvent) => {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (data.type === 'AUTH_RESULT' && data.url) {
+          console.log("Received Auth Result from Native:", data.url);
+          setIsLoading(true);
+          await enokiFlow.handleAuthCallback(data.url);
+          await refreshSession();
+          router.push('/');
+        }
+      } catch (e) {
+        console.error("Error handling native auth result:", e);
+        setIsLoading(false);
+      }
+    };
+
+    window.addEventListener("message", handleAuthResult);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    document.addEventListener("message", handleAuthResult as any);
+
+    return () => {
+      window.removeEventListener("message", handleAuthResult);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      document.removeEventListener("message", handleAuthResult as any);
+    }
+  }, [refreshSession, router]);
+
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     try {
-      // Prioritize the configured app URL from environment variables
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
       const redirectUrl = `${appUrl}/auth/callback`;
       
@@ -54,22 +82,24 @@ export default function LoginPage() {
         extraParams: {
           scope: ['openid', 'email', 'profile'],
         },
-      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
       
-      window.location.href = url;
+      if (window.ReactNativeWebView) {
+        // Send to Native App to open in System Browser
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'OPEN_AUTH',
+          url: url
+        }));
+        // We stay on this page loading until we get AUTH_RESULT back
+      } else {
+        window.location.href = url;
+      }
     } catch (error) {
       console.error("Google login error:", error);
       setIsLoading(false);
       alert("Failed to initialize Google login. Check console for details.");
     }
-  };
-
-  const handleEmailLogin = () => {
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      alert("Email login not implemented yet");
-    }, 1500);
   };
 
   return (

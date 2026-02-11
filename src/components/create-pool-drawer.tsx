@@ -13,7 +13,6 @@ import { enokiFlow } from "@/lib/enoki";
 import { fromBase64 } from "@mysten/sui/utils";
 
 const PACKAGE_ID = process.env.NEXT_PUBLIC_SUI_PACKAGE_ID || "";
-const ADMIN_CAP = process.env.NEXT_PUBLIC_SUI_ADMIN_CAP || "";
 const RPC_URL = process.env.NEXT_PUBLIC_SUI_TESTNET_URL || 'https://fullnode.testnet.sui.io:443';
 const suiClient = new SuiGrpcClient({ baseUrl: RPC_URL, network: 'testnet' });
 

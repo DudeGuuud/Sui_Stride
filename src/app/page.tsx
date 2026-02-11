@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Flame, Footprints, MapPin, Play, Trophy, UserPlus, Loader2, Coins, ArrowRight } from "lucide-react";
+import { Flame, Footprints, MapPin, Play, Trophy, UserPlus, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/context/auth";
 import { useDAppKit } from "@mysten/dapp-kit-react";
@@ -13,7 +13,6 @@ import { Transaction } from "@mysten/sui/transactions";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { SuiGraphQLClient } from "@mysten/sui/graphql";
 import { enokiFlow } from "@/lib/enoki";
-import { getZkLoginSignature } from "@mysten/sui/zklogin";
 import { fromBase64 } from "@mysten/sui/utils";
 
 const PACKAGE_ID = process.env.NEXT_PUBLIC_SUI_PACKAGE_ID || "";
@@ -23,6 +22,43 @@ const GRAPHQL_URL = process.env.NEXT_PUBLIC_SUI_GRAPHQL_URL || 'https://graphql.
 const suiClient = new SuiGrpcClient({ baseUrl: RPC_URL, network: 'testnet' });
 const graphqlClient = new SuiGraphQLClient({ url: GRAPHQL_URL, network: 'testnet' });
 
+interface PoolFields {
+  name?: string | { bytes: string };
+  created_at?: string;
+  duration_secs?: string;
+  finalized?: boolean;
+  participants?: Array<{
+    user_id?: string;
+    steps?: string;
+    fields?: {
+      user_id?: string;
+      steps?: string;
+    };
+  }>;
+}
+
+interface PoolNode {
+  address: string;
+  asMoveObject: {
+    contents: {
+      type: {
+        repr: string;
+      };
+      json: PoolFields;
+    };
+  };
+}
+
+interface ActivePool {
+  id: string;
+  title: string;
+  coinType: string;
+  mySteps: number;
+  myCalories: number;
+  myDistanceKm: string;
+  createdAt: number;
+}
+
 export default function HomeDashboard() {
   const { user, isConnected, userDataId, refreshUserData } = useAuth();
   const dAppKit = useDAppKit();
@@ -31,31 +67,12 @@ export default function HomeDashboard() {
   const [strdBalance, setStrdBalance] = useState("0.00");
 
   // Active Pool State
-  const [activePool, setActivePool] = useState<any>(null);
-  const [isLoadingPool, setIsLoadingPool] = useState(true);
+  const [activePool, setActivePool] = useState<ActivePool | null>(null);
 
   // Fallback if no pool is active
   const DEFAULT_TARGET_STEPS = 10000;
 
-  useEffect(() => {
-    if (user?.address) {
-      suiClient.getBalance({ owner: user.address }).then((b) => {
-        setBalance((Number(b.balance.balance) / 1e9).toFixed(2));
-      });
-      // Fetch STRD balance
-      suiClient.listCoins({
-        owner: user.address,
-        coinType: `${PACKAGE_ID}::strd::STRD`
-      }).then((coins) => {
-        const total = coins.objects.reduce((acc, coin) => acc + Number(coin.balance), 0);
-        setStrdBalance((total / 1e9).toFixed(2));
-      });
-
-      if (PACKAGE_ID) fetchActivePool();
-    }
-  }, [user?.address, PACKAGE_ID]);
-
-  const fetchActivePool = async () => {
+  const fetchActivePool = useCallback(async () => {
     try {
       const result = await graphqlClient.query({
         query: `
@@ -99,21 +116,22 @@ export default function HomeDashboard() {
         return;
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = result.data as any;
-      const allNodes = [
+      const allNodes: PoolNode[] = [
         ...(data?.suiPools?.nodes || []),
         ...(data?.strdPools?.nodes || [])
       ];
 
       // Filter for joined & active pools
-      const joinedActivePools = allNodes.map((node: any) => {
+      const joinedActivePools = allNodes.map((node) => {
         const moveObj = node.asMoveObject;
         const fields = moveObj?.contents?.json;
         const fullType = moveObj?.contents?.type?.repr;
         if (!fields || !fullType) return null;
 
         // Helper to extract string from Move String struct if needed
-        const extractStr = (val: any) => {
+        const extractStr = (val: string | { bytes: string } | undefined) => {
           if (typeof val === 'string') return val;
           if (val && typeof val === 'object' && val.bytes) return val.bytes;
           return String(val || "");
@@ -136,6 +154,7 @@ export default function HomeDashboard() {
 
         // Check if joined
         const participants = fields.participants || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userParticipant = Array.isArray(participants) ? participants.find((p: any) => {
           const pAddr = p.user_id || p.fields?.user_id || p;
           return pAddr === user?.address;
@@ -143,20 +162,22 @@ export default function HomeDashboard() {
 
         if (!userParticipant || isEnded) return null;
 
+        const steps = Number(userParticipant.steps || userParticipant.fields?.steps || 0);
+
         return {
           id: node.address,
           title: poolName,
           coinType,
-          mySteps: Number(userParticipant.steps || userParticipant.fields?.steps || 0),
+          mySteps: steps,
           // Approximate calories: 0.045 kcal per step (very rough avg)
-          myCalories: Math.floor(Number(userParticipant.steps || userParticipant.fields?.steps || 0) * 0.045),
-          myDistanceKm: (Number(userParticipant.steps || userParticipant.fields?.steps || 0) * 0.000762).toFixed(2), // ~0.762m per step
+          myCalories: Math.floor(steps * 0.045),
+          myDistanceKm: (steps * 0.000762).toFixed(2), // ~0.762m per step
           createdAt
-        };
-      }).filter(Boolean);
+        } as ActivePool;
+      }).filter((pool): pool is ActivePool => pool !== null);
 
       // Pick the most recent one
-      joinedActivePools.sort((a: any, b: any) => b.createdAt - a.createdAt);
+      joinedActivePools.sort((a, b) => b.createdAt - a.createdAt);
 
       if (joinedActivePools.length > 0) {
         setActivePool(joinedActivePools[0]);
@@ -165,10 +186,26 @@ export default function HomeDashboard() {
       }
     } catch (e) {
       console.error("Error fetching active pool:", e);
-    } finally {
-      setIsLoadingPool(false);
     }
-  };
+  }, [user?.address]);
+
+  useEffect(() => {
+    if (user?.address) {
+      suiClient.getBalance({ owner: user.address }).then((b) => {
+        setBalance((Number(b.balance.balance) / 1e9).toFixed(2));
+      });
+      // Fetch STRD balance
+      suiClient.listCoins({
+        owner: user.address,
+        coinType: `${PACKAGE_ID}::strd::STRD`
+      }).then((coins) => {
+        const total = coins.objects.reduce((acc, coin) => acc + Number(coin.balance), 0);
+        setStrdBalance((total / 1e9).toFixed(2));
+      });
+
+      if (PACKAGE_ID) fetchActivePool();
+    }
+  }, [user?.address, fetchActivePool]);
 
   const FAUCET_ID = process.env.NEXT_PUBLIC_SUI_FAUCET_ID || "";
 

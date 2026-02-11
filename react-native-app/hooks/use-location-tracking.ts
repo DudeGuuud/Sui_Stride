@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import * as Location from 'expo-location';
+import { Platform, PermissionsAndroid } from 'react-native';
+import Geolocation, { GeoPosition, GeoError } from 'react-native-geolocation-service';
 import { Pedometer } from 'expo-sensors';
 
 export interface LocationData {
@@ -31,85 +32,125 @@ export const useLocationTracking = (tracking: boolean = true) => {
   const [location, setLocation] = useState<LocationData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
-  // Ref to keep track of the last valid location for filtering
-  // Using ref to avoid stale closures in the subscription callback
   const lastLocationRef = useRef<LocationData | null>(null);
+  const currentStepsRef = useRef<number>(0);
 
+  // Pedometer Setup
   useEffect(() => {
-    let locationSubscription: Location.LocationSubscription | null = null;
-    let pedometerSubscription: Pedometer.PedometerSubscription | null = null;
-    let currentSteps = 0;
-
-    (async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let pedometerSubscription: any = null;
+    
+    const startPedometer = async () => {
       try {
-        const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
-        if (locStatus !== 'granted') {
-          setErrorMsg('Permission to access location was denied');
-          return;
-        }
-
         const isAvailable = await Pedometer.isAvailableAsync();
         if (isAvailable) {
-           pedometerSubscription = Pedometer.watchStepCount((result) => {
-            currentSteps = result.steps;
-            setLocation(prev => prev ? { ...prev, steps: currentSteps } : null);
+          pedometerSubscription = Pedometer.watchStepCount((result) => {
+            currentStepsRef.current = result.steps;
+            setLocation(prev => prev ? { ...prev, steps: result.steps } : null);
           });
         }
-
-        if (tracking) {
-          locationSubscription = await Location.watchPositionAsync(
-            {
-              accuracy: Location.Accuracy.BestForNavigation,
-              timeInterval: 1000,
-              distanceInterval: 1,
-            },
-            (newLocation) => {
-              const { latitude, longitude, speed, accuracy } = newLocation.coords;
-
-              // Filter 1: Accuracy Check (from main branch)
-              // Reject points with poor accuracy (> 200m for testing, was 20m)
-              if (accuracy && accuracy > 200) {
-                return;
-              }
-
-              // Filter 2: Stationary Drift Check (from main branch)
-              // If moved less than 1 meters, assume stationary to avoid jitter
-              if (lastLocationRef.current) {
-                const dist = calculateDistance(
-                  lastLocationRef.current.latitude,
-                  lastLocationRef.current.longitude,
-                  latitude,
-                  longitude
-                );
-                if (dist < 1) { // Relaxed from 2m
-                  return;
-                }
-              }
-
-              const validLocation: LocationData = {
-                latitude,
-                longitude,
-                speed,
-                accuracy,
-                timestamp: newLocation.timestamp,
-                steps: currentSteps,
-              };
-
-              lastLocationRef.current = validLocation;
-              setLocation(validLocation);
-            }
-          );
-        }
-      } catch (_) {
-        setErrorMsg('Error initializing tracking services');
+      } catch (e) {
+        console.warn("Pedometer error:", e);
       }
-    })();
+    };
+
+    startPedometer();
 
     return () => {
-      locationSubscription?.remove();
       pedometerSubscription?.remove();
-      // Reset ref on unmount or when tracking stops? 
-      // Maybe not if we want to resume, but for now this is fine.
+    };
+  }, []);
+
+  // Geolocation Setup
+  useEffect(() => {
+    let watchId: number | null = null;
+
+    const requestPermissions = async () => {
+      if (Platform.OS === 'ios') {
+        const auth = await Geolocation.requestAuthorization("whenInUse");
+        if (auth === "granted") return true;
+      }
+
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: "Location Permission",
+            message: "We need access to your location to track your run.",
+            buttonNeutral: "Ask Me Later",
+            buttonNegative: "Cancel",
+            buttonPositive: "OK"
+          }
+        );
+        if (granted === PermissionsAndroid.RESULTS.GRANTED) return true;
+      }
+      return false;
+    };
+
+    const startTracking = async () => {
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) {
+        setErrorMsg('Location permission denied');
+        return;
+      }
+
+      if (tracking) {
+        watchId = Geolocation.watchPosition(
+          (position: GeoPosition) => {
+            const { latitude, longitude, speed, accuracy } = position.coords;
+
+            // Filter 1: Accuracy Check
+            if (accuracy > 200) {
+              return;
+            }
+
+            // Filter 2: Stationary Drift Check
+            if (lastLocationRef.current) {
+              const dist = calculateDistance(
+                lastLocationRef.current.latitude,
+                lastLocationRef.current.longitude,
+                latitude,
+                longitude
+              );
+              if (dist < 1) {
+                return;
+              }
+            }
+
+            const validLocation: LocationData = {
+              latitude,
+              longitude,
+              speed,
+              accuracy,
+              timestamp: position.timestamp,
+              steps: currentStepsRef.current,
+            };
+
+            lastLocationRef.current = validLocation;
+            setLocation(validLocation);
+          },
+          (error: GeoError) => {
+            console.log(error.code, error.message);
+            setErrorMsg(error.message);
+          },
+          { 
+            enableHighAccuracy: true, 
+            distanceFilter: 0, 
+            interval: 1000, 
+            fastestInterval: 500,
+            showLocationDialog: true,
+            forceRequestLocation: true
+          }
+        );
+      }
+    };
+
+    startTracking();
+
+    return () => {
+      if (watchId !== null) {
+        Geolocation.clearWatch(watchId);
+      }
     };
   }, [tracking]);
 

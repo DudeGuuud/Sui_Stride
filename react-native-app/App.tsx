@@ -2,6 +2,8 @@ import React, { useRef, useEffect } from 'react';
 import { StyleSheet, SafeAreaView, Platform, StatusBar } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { useLocationTracking } from './hooks/use-location-tracking';
 
 // Use environment variable with EXPO_PUBLIC_ prefix for Expo
@@ -14,18 +16,14 @@ export default function App() {
   // Send GPS data to Web
   useEffect(() => {
     if (location && webViewRef.current) {
-      const script = `
-        window.postMessage(${JSON.stringify({
+      webViewRef.current.postMessage(JSON.stringify({
         type: 'LOCATION_UPDATE',
         payload: location,
-      })}, '*');
-        true;
-      `;
-      webViewRef.current.injectJavaScript(script);
+      }));
     }
   }, [location]);
 
-  const handleMessage = (event: WebViewMessageEvent) => {
+  const handleMessage = async (event: WebViewMessageEvent) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
 
@@ -35,6 +33,27 @@ export default function App() {
 
       if (data.type === 'HAPTICS_IMPACT') {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+
+      if (data.type === 'OPEN_AUTH') {
+        const { url } = data;
+        const redirectUrl = Linking.createURL('auth-callback');
+        
+        console.log("Opening Auth Session:", url);
+        console.log("Redirect URL:", redirectUrl);
+
+        const result = await WebBrowser.openAuthSessionAsync(url, redirectUrl);
+        
+        if (result.type === 'success' && result.url) {
+          console.log("Auth Success:", result.url);
+          // Send the full callback URL back to the WebView to parse
+          webViewRef.current?.postMessage(JSON.stringify({
+            type: 'AUTH_RESULT',
+            url: result.url
+          }));
+        } else {
+          console.log("Auth Cancelled or Failed", result.type);
+        }
       }
     } catch {
       // Ignore non-JSON messages
