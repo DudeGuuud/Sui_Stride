@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Camera,
   Clock,
@@ -15,6 +15,10 @@ import {
   Target,
   Wallet,
   Loader2,
+  ChevronLeft,
+  Footprints,
+  MapPin,
+  Trophy
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,20 +28,29 @@ import {
   ConnectButton,
   useDAppKit
 } from "@mysten/dapp-kit-react";
-import { useSearchParams } from "next/navigation";
 import { Transaction } from "@mysten/sui/transactions";
 import { useAuth } from "@/context/auth";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
+import { SuiGraphQLClient } from "@mysten/sui/graphql";
 import { enokiFlow } from "@/lib/enoki";
-import { getZkLoginSignature } from "@mysten/sui/zklogin";
 import { fromBase64 } from "@mysten/sui/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 // Blockchain configuration from environment variables
 const PACKAGE_ID = process.env.NEXT_PUBLIC_SUI_PACKAGE_ID || "0x0";
-const PARTICIPANT_STORE_ID = process.env.NEXT_PUBLIC_SUI_PARTICIPANT_STORE_ID || "0x0";
 const STRIDE_MODULE = "core";
 const RPC_URL = process.env.NEXT_PUBLIC_SUI_TESTNET_URL || 'https://fullnode.testnet.sui.io:443';
+const GRAPHQL_URL = process.env.NEXT_PUBLIC_SUI_GRAPHQL_URL || 'https://graphql.testnet.sui.io/graphql';
+
 const suiClient = new SuiGrpcClient({ baseUrl: RPC_URL, network: 'testnet' });
+const graphqlClient = new SuiGraphQLClient({ url: GRAPHQL_URL, network: 'testnet' });
 
 // Dynamically import Map to avoid SSR issues with Leaflet
 const MapComponent = dynamic(() => import("@/components/map-component"), {
@@ -54,17 +67,30 @@ const MapComponent = dynamic(() => import("@/components/map-component"), {
 export default function WorkoutTrackingPage() {
   const { user, isConnected, userDataId } = useAuth();
   const dAppKit = useDAppKit();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
+  // URL Params or null
+  const paramPoolId = searchParams.get('pool');
+  const paramCoinType = searchParams.get('type');
+
+  // Selected Pool State
+  const [selectedPoolId, setSelectedPoolId] = useState<string | null>(paramPoolId);
+  const [selectedCoinType, setSelectedCoinType] = useState<string | null>(paramCoinType);
+  const [poolTitle, setPoolTitle] = useState<string>("Free Run");
+
+  // Pool Selection UI State
+  const [joinedPools, setJoinedPools] = useState<any[]>([]);
+  const [showPoolSelector, setShowPoolSelector] = useState(false);
+  const [isLoadingPools, setIsLoadingPools] = useState(false);
+
+  // Tracking State
   const [isTracking, setIsTracking] = useState(false);
   const { location, path, relativePoints, distance, steps, errorMsg } = useNativeLocation(isTracking);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [recenterTrigger, setRecenterTrigger] = useState(0); // Trigger for map re-centering
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-
-  const searchParams = useSearchParams();
-  const poolId = searchParams.get('pool') || process.env.NEXT_PUBLIC_SUI_PARTICIPANT_STORE_ID || "0x0";
-  const coinType = searchParams.get('type') || `${PACKAGE_ID}::strd::STRD`;
 
   // Anti-cheat tracking
   const segmenterRef = useRef<StrideSegmenter>(new StrideSegmenter("SESSION_NONCE_PLACEHOLDER"));
@@ -75,7 +101,149 @@ export default function WorkoutTrackingPage() {
   const weightKg = 70; // User weight
   const calories = (distance / 1000) * weightKg * 1.036;
 
-  const router = useRouter();
+  // Fetch Pool Metadata if ID is present
+  useEffect(() => {
+    if (paramPoolId) {
+      // Just set ID, we could fetch title async if needed, but for now defaults or fetched later
+      // We'll try to fetch title for better UX
+      fetchPoolTitle(paramPoolId);
+    } else {
+      // No pool ID? Trigger selector logic
+      if (isConnected && user) {
+        fetchJoinedPools();
+      }
+    }
+  }, [paramPoolId, isConnected, user]);
+
+  const fetchPoolTitle = async (id: string) => {
+    try {
+      const obj = await suiClient.getObject({
+        objectId: id,
+        include: { json: true }
+      });
+      if (obj.object.json) {
+        const fields = obj.object.json as any;
+        // Handle different string representations
+        const name = fields.name;
+        let title = "Challenge";
+        if (typeof name === 'string') title = name;
+        else if (name && typeof name === 'object' && name.bytes) title = new TextDecoder().decode(Uint8Array.from(name.bytes));
+        // Note: Move String is usually { bytes: [...] } or just string in JSON
+        // If it's pure string in JSON
+        if (typeof fields.name === 'string') title = fields.name;
+
+        setPoolTitle(title);
+      }
+    } catch (e) {
+      console.error("Failed to fetch pool title", e);
+    }
+  };
+
+  const fetchJoinedPools = async () => {
+    setIsLoadingPools(true);
+    try {
+      const result = await graphqlClient.query({
+        query: `
+          query QueryPools($suiPoolType: String!, $strdPoolType: String!) {
+            suiPools: objects(filter: { type: $suiPoolType }) {
+              nodes {
+                address
+                asMoveObject {
+                  contents {
+                    type {
+                      repr
+                    }
+                    json
+                  }
+                }
+              }
+            }
+            strdPools: objects(filter: { type: $strdPoolType }) {
+              nodes {
+                address
+                asMoveObject {
+                  contents {
+                    type {
+                      repr
+                    }
+                    json
+                  }
+                }
+              }
+            }
+          }
+        `,
+        variables: {
+          suiPoolType: `${PACKAGE_ID}::core::StakingPool<0x2::sui::SUI>`,
+          strdPoolType: `${PACKAGE_ID}::core::StakingPool<${PACKAGE_ID}::strd::STRD>`
+        }
+      });
+
+      if (result.errors) {
+        console.error("GraphQL Query Error:", result.errors);
+        return;
+      }
+
+      const data = result.data as any;
+      const allNodes = [
+        ...(data?.suiPools?.nodes || []),
+        ...(data?.strdPools?.nodes || [])
+      ];
+
+      const myPools = allNodes.map((node: any) => {
+        const moveObj = node.asMoveObject;
+        const fields = moveObj?.contents?.json;
+        const fullType = moveObj?.contents?.type?.repr;
+        if (!fields || !fullType) return null;
+
+        // Helper to extract string
+        const extractStr = (val: any) => {
+          if (typeof val === 'string') return val;
+          if (val && typeof val === 'object' && val.bytes) return val.bytes;
+          return String(val || "");
+        };
+
+        const poolName = extractStr(fields.name) || ("SuiStride Challenge");
+        const coinType = fullType.match(/<(.+)>$/)?.[1] || "";
+
+        // Check if joined
+        const participants = fields.participants || [];
+        const isJoined = Array.isArray(participants) ? participants.some((p: any) => {
+          const pAddr = p.user_id || p.fields?.user_id || p;
+          return pAddr === user?.address;
+        }) : false;
+
+        // Check if ended
+        const finalized = fields.finalized;
+
+        if (!isJoined || finalized) return null;
+
+        return {
+          id: node.address,
+          title: poolName,
+          coinType
+        };
+      }).filter(Boolean);
+
+      setJoinedPools(myPools);
+      if (myPools.length > 0) {
+        setShowPoolSelector(true);
+      } else {
+        // No pools? Redirect or warn
+        // For now, let them run "Free" (but submission will fail if we enforce pool)
+        // Actually, if no pool, we can't submit to a pool.
+        // We should probably just tell them to join a pool.
+        alert("You haven't joined any active pools! Please join a pool first.");
+        router.push('/pools');
+      }
+
+    } catch (e) {
+      console.error("Error fetching pools:", e);
+    } finally {
+      setIsLoadingPools(false);
+    }
+  };
+
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -109,15 +277,26 @@ export default function WorkoutTrackingPage() {
       return;
     }
 
+    if (!selectedPoolId || !selectedCoinType) {
+      // Should have been caught by selector, but double check
+      if (joinedPools.length > 0) {
+        setShowPoolSelector(true);
+        return;
+      } else {
+        alert("No target pool selected.");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       // Start session on-chain
       const tx = new Transaction();
       tx.moveCall({
         target: `${PACKAGE_ID}::${STRIDE_MODULE}::start_run`,
-        typeArguments: [coinType],
+        typeArguments: [selectedCoinType],
         arguments: [
-          tx.object(poolId), // The Pool ID
+          tx.object(selectedPoolId), // The selected Pool ID
           tx.object('0x6'), // Clock
         ],
       });
@@ -166,7 +345,7 @@ export default function WorkoutTrackingPage() {
   };
 
   const handleEndWorkout = async () => {
-    if (!isConnected || !userDataId || !sessionId || !user) {
+    if (!isConnected || !userDataId || !sessionId || !user || !selectedPoolId || !selectedCoinType) {
       alert("Incomplete session data.");
       return;
     }
@@ -190,9 +369,9 @@ export default function WorkoutTrackingPage() {
 
       tx.moveCall({
         target: `${PACKAGE_ID}::${STRIDE_MODULE}::submit_run_with_proof`,
-        typeArguments: [coinType],
+        typeArguments: [selectedCoinType],
         arguments: [
-          tx.object(poolId),
+          tx.object(selectedPoolId),
           tx.object(userDataId),
           tx.object(sessionId),
           tx.pure.u64(steps),
@@ -225,9 +404,11 @@ export default function WorkoutTrackingPage() {
       console.log("Transaction successful:", result);
       const digest = result.$kind === 'Transaction' ? result.Transaction.digest : 'Unknown';
       alert(`Workout Complete and Verified on Sui!\nDigest: ${digest}`);
-      router.back();
+      router.push('/'); // Go back to dashboard to see updated stats
     } catch (err) {
       console.error("Error ending workout:", err);
+      // Wait, if it failed, we shouldn't just lose data?
+      // For now alert, but ideally we save locally in repo
       alert(err instanceof Error ? err.message : "Failed to submit run to blockchain.");
       setIsSubmitting(false);
     }
@@ -262,23 +443,76 @@ export default function WorkoutTrackingPage() {
     return `${mins}'${secs.toString().padStart(2, "0")}"`;
   };
 
+  const selectPool = (poolId: string) => {
+    const pool = joinedPools.find(p => p.id === poolId);
+    if (pool) {
+      setSelectedPoolId(pool.id);
+      setSelectedCoinType(pool.coinType);
+      setPoolTitle(pool.title);
+      setShowPoolSelector(false);
+    }
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background p-6 pb-20">
+
+      {/* Pool Selector Dialog */}
+      <Dialog open={showPoolSelector} onOpenChange={setShowPoolSelector}>
+        <DialogContent className="rounded-2xl w-[90%] max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Select a Challenge</DialogTitle>
+            <DialogDescription>
+              Choose which pool you want to run for.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-4">
+            {isLoadingPools ? (
+              <div className="flex justify-center p-4">
+                <Loader2 className="animate-spin text-primary" />
+              </div>
+            ) : joinedPools.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {joinedPools.map(pool => (
+                  <Button
+                    key={pool.id}
+                    variant="outline"
+                    className="justify-between h-14"
+                    onClick={() => selectPool(pool.id)}
+                  >
+                    <span className="font-bold">{pool.title}</span>
+                    <span className="text-xs text-muted-foreground">{pool.coinType.includes("STRD") ? "STRD" : "SUI"}</span>
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center text-muted-foreground text-sm">
+                No active pools found.
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Header */}
       <header className="flex justify-between items-center py-2 mb-6">
         <div className="flex items-center gap-1">
-          <span className="text-secondary text-[10px] uppercase font-bold tracking-widest">
-            (( )) SUI TESTNET
+          <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-full">
+            <ChevronLeft />
+          </Button>
+        </div>
+        <div className="flex flex-col items-center">
+          <span className="text-muted-foreground text-[10px] font-bold tracking-[2px] uppercase">
+            RUNNING FOR
+          </span>
+          <span className="text-foreground text-sm font-black tracking-tight uppercase max-w-[150px] truncate text-center">
+            {poolTitle}
           </span>
         </div>
-        <span className="text-foreground text-xs font-bold tracking-[4px] uppercase">
-          SuiStride
-        </span>
         <div className="flex items-center gap-2">
           {user?.label === 'Google User' ? (
             <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-full border border-primary/20">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-xs font-bold text-primary">Google User</span>
+              <span className="text-xs font-bold text-primary">ZK Login</span>
             </div>
           ) : (
             <ConnectButton />
@@ -396,7 +630,7 @@ export default function WorkoutTrackingPage() {
       {/* Control Buttons */}
       <div className="flex justify-center items-center gap-10 mb-10">
         <button
-          className="w-14 h-14 rounded-full bg-card flex items-center justify-center border border-border hover:bg-card/80 transition-colors shadow-lg shadow-black/20 active:scale-95"
+          className="w-14 h-14 rounded-full bg-card flex items-center justify-center border border-border hover:bg-card/80 transition-colors shadow-lg shadow-black/20 active:scale-95 disabled:opacity-50"
           onClick={() => {
             if (!sessionId) {
               handleStartWorkout();
@@ -404,7 +638,7 @@ export default function WorkoutTrackingPage() {
               setIsTracking(!isTracking);
             }
           }}
-          disabled={isSubmitting}
+          disabled={isSubmitting || !selectedPoolId}
         >
           {isSubmitting ? (
             <Loader2 className="animate-spin text-primary" size={24} />
@@ -427,7 +661,7 @@ export default function WorkoutTrackingPage() {
         variant="outline"
         className="h-16 w-full rounded-2xl border-2 border-primary/20 bg-background/20 mb-10 hover:bg-primary/10 transition-colors disabled:opacity-50"
         onClick={handleEndWorkout}
-        disabled={isSubmitting}
+        disabled={isSubmitting || !sessionId}
       >
         <span className="text-foreground text-lg font-bold">
           {isSubmitting ? "Submitting to Sui..." : "End Workout"}

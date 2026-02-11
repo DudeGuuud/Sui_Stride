@@ -1,24 +1,27 @@
 "use client";
 
-
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Flame, Footprints, MapPin, Play, Trophy, UserPlus } from "lucide-react";
+import { Flame, Footprints, MapPin, Play, Trophy, UserPlus, Loader2, Coins, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/context/auth";
 import { useDAppKit } from "@mysten/dapp-kit-react";
 import { Transaction } from "@mysten/sui/transactions";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
+import { SuiGraphQLClient } from "@mysten/sui/graphql";
 import { enokiFlow } from "@/lib/enoki";
 import { getZkLoginSignature } from "@mysten/sui/zklogin";
 import { fromBase64 } from "@mysten/sui/utils";
 
 const PACKAGE_ID = process.env.NEXT_PUBLIC_SUI_PACKAGE_ID || "";
 const RPC_URL = process.env.NEXT_PUBLIC_SUI_TESTNET_URL || 'https://fullnode.testnet.sui.io:443';
+const GRAPHQL_URL = process.env.NEXT_PUBLIC_SUI_GRAPHQL_URL || 'https://graphql.testnet.sui.io/graphql';
+
 const suiClient = new SuiGrpcClient({ baseUrl: RPC_URL, network: 'testnet' });
+const graphqlClient = new SuiGraphQLClient({ url: GRAPHQL_URL, network: 'testnet' });
 
 export default function HomeDashboard() {
   const { user, isConnected, userDataId, refreshUserData } = useAuth();
@@ -26,6 +29,13 @@ export default function HomeDashboard() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [balance, setBalance] = useState("0.00");
   const [strdBalance, setStrdBalance] = useState("0.00");
+
+  // Active Pool State
+  const [activePool, setActivePool] = useState<any>(null);
+  const [isLoadingPool, setIsLoadingPool] = useState(true);
+
+  // Fallback if no pool is active
+  const DEFAULT_TARGET_STEPS = 10000;
 
   useEffect(() => {
     if (user?.address) {
@@ -40,8 +50,125 @@ export default function HomeDashboard() {
         const total = coins.objects.reduce((acc, coin) => acc + Number(coin.balance), 0);
         setStrdBalance((total / 1e9).toFixed(2));
       });
+
+      if (PACKAGE_ID) fetchActivePool();
     }
   }, [user?.address, PACKAGE_ID]);
+
+  const fetchActivePool = async () => {
+    try {
+      const result = await graphqlClient.query({
+        query: `
+          query QueryPools($suiPoolType: String!, $strdPoolType: String!) {
+            suiPools: objects(filter: { type: $suiPoolType }) {
+              nodes {
+                address
+                asMoveObject {
+                  contents {
+                    type {
+                      repr
+                    }
+                    json
+                  }
+                }
+              }
+            }
+            strdPools: objects(filter: { type: $strdPoolType }) {
+              nodes {
+                address
+                asMoveObject {
+                  contents {
+                    type {
+                      repr
+                    }
+                    json
+                  }
+                }
+              }
+            }
+          }
+        `,
+        variables: {
+          suiPoolType: `${PACKAGE_ID}::core::StakingPool<0x2::sui::SUI>`,
+          strdPoolType: `${PACKAGE_ID}::core::StakingPool<${PACKAGE_ID}::strd::STRD>`
+        }
+      });
+
+      if (result.errors) {
+        console.error("GraphQL Query Error:", result.errors);
+        return;
+      }
+
+      const data = result.data as any;
+      const allNodes = [
+        ...(data?.suiPools?.nodes || []),
+        ...(data?.strdPools?.nodes || [])
+      ];
+
+      // Filter for joined & active pools
+      const joinedActivePools = allNodes.map((node: any) => {
+        const moveObj = node.asMoveObject;
+        const fields = moveObj?.contents?.json;
+        const fullType = moveObj?.contents?.type?.repr;
+        if (!fields || !fullType) return null;
+
+        // Helper to extract string from Move String struct if needed
+        const extractStr = (val: any) => {
+          if (typeof val === 'string') return val;
+          if (val && typeof val === 'object' && val.bytes) return val.bytes;
+          return String(val || "");
+        };
+
+        const poolName = extractStr(fields.name) || ("SuiStride Challenge");
+        const coinType = fullType.match(/<(.+)>$/)?.[1] || "";
+
+        const createdAt = Number(fields.created_at || 0);
+        const durationSecs = Number(fields.duration_secs || 0);
+
+        // Check if active
+        let isEnded = false;
+        if (createdAt > 0 && durationSecs > 0) {
+          const durationMs = durationSecs * 1000;
+          const endTime = createdAt + durationMs;
+          if (Date.now() > endTime) isEnded = true;
+        }
+        if (fields.finalized) isEnded = true;
+
+        // Check if joined
+        const participants = fields.participants || [];
+        const userParticipant = Array.isArray(participants) ? participants.find((p: any) => {
+          const pAddr = p.user_id || p.fields?.user_id || p;
+          return pAddr === user?.address;
+        }) : null;
+
+        if (!userParticipant || isEnded) return null;
+
+        return {
+          id: node.address,
+          title: poolName,
+          coinType,
+          mySteps: Number(userParticipant.steps || userParticipant.fields?.steps || 0),
+          // Approximate calories: 0.045 kcal per step (very rough avg)
+          myCalories: Math.floor(Number(userParticipant.steps || userParticipant.fields?.steps || 0) * 0.045),
+          myDistanceKm: (Number(userParticipant.steps || userParticipant.fields?.steps || 0) * 0.000762).toFixed(2), // ~0.762m per step
+          createdAt
+        };
+      }).filter(Boolean);
+
+      // Pick the most recent one
+      joinedActivePools.sort((a: any, b: any) => b.createdAt - a.createdAt);
+
+      if (joinedActivePools.length > 0) {
+        setActivePool(joinedActivePools[0]);
+      } else {
+        setActivePool(null);
+      }
+    } catch (e) {
+      console.error("Error fetching active pool:", e);
+    } finally {
+      setIsLoadingPool(false);
+    }
+  };
 
   const FAUCET_ID = process.env.NEXT_PUBLIC_SUI_FAUCET_ID || "";
 
@@ -193,162 +320,141 @@ export default function HomeDashboard() {
         </Card>
       </div>
 
-      {/* Today's Activity */}
+      {/* Active Challenge / Today's Activity */}
       <div className="mb-8">
-        <h2 className="text-foreground text-2xl font-bold mb-5 tracking-tight">
-          Today&apos;s Activity
-        </h2>
-        <Card className="bg-card border-none mb-5 shadow-sm">
-          <CardContent className="p-6">
-            <div className="flex justify-between items-center mb-4">
-              <div className="flex items-center gap-3">
-                <div className="bg-primary/10 p-2 rounded-lg">
-                  <Footprints size={24} color="#00E5FF" />
-                </div>
-                <div>
-                  <div className="text-foreground font-bold text-lg">
-                    7,500{" "}
-                    <span className="text-muted-foreground font-normal text-sm">
-                      / 10,000 steps
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-foreground text-2xl font-bold tracking-tight">
+            My Active Challenge
+          </h2>
+          {activePool && (
+            <span className="text-xs font-bold bg-primary/20 text-primary px-2 py-1 rounded-md">
+              LIVE
+            </span>
+          )}
+        </div>
+
+        {userDataId ? (
+          activePool ? (
+            <>
+              <Card className="bg-card border-none mb-5 shadow-sm border-l-4 border-l-primary">
+                <CardContent className="p-6">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-foreground mb-1">{activePool.title}</h3>
+                      <p className="text-muted-foreground text-xs">Target: 10,000 Steps</p>
+                    </div>
+                    <div className="bg-primary/10 p-2 rounded-lg">
+                      <Trophy size={20} className="text-primary" />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-muted p-2 rounded-lg">
+                        <Footprints size={20} className="text-foreground" />
+                      </div>
+                      <div>
+                        <div className="text-foreground font-bold text-xl">
+                          {activePool.mySteps.toLocaleString()}
+                          <span className="text-muted-foreground font-medium text-sm ml-1">
+                            steps
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-primary font-black text-lg">
+                      {Math.min(Math.floor((activePool.mySteps / DEFAULT_TARGET_STEPS) * 100), 100)}%
                     </span>
                   </div>
-                </div>
-              </div>
-              <span className="text-primary font-black text-lg">75%</span>
-            </div>
-            <Progress value={75} className="h-2.5 bg-muted/30" />
-          </CardContent>
-        </Card>
+                  <Progress value={(activePool.mySteps / DEFAULT_TARGET_STEPS) * 100} className="h-2.5 bg-muted/50" />
+                </CardContent>
+              </Card>
 
-        <div className="flex gap-4">
-          <Card className="flex-1 bg-card border-none shadow-sm">
-            <CardContent className="p-5">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center mb-4">
-                <MapPin size={22} color="#7986CB" />
+              <div className="flex gap-4">
+                <Card className="flex-1 bg-card border-none shadow-sm">
+                  <CardContent className="p-5">
+                    <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center mb-4">
+                      <MapPin size={22} color="#7986CB" />
+                    </div>
+                    <div className="flex items-baseline gap-1 mb-1">
+                      <span className="text-foreground text-3xl font-bold">{activePool.myDistanceKm}</span>
+                      <span className="text-muted-foreground text-sm font-medium">
+                        km
+                      </span>
+                    </div>
+                    <span className="text-muted-foreground text-[10px] uppercase font-black tracking-[1.5px] opacity-70">
+                      Distance
+                    </span>
+                  </CardContent>
+                </Card>
+                <Card className="flex-1 bg-card border-none shadow-sm">
+                  <CardContent className="p-5">
+                    <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center mb-4">
+                      <Flame size={22} color="#FF8A65" />
+                    </div>
+                    <div className="flex items-baseline gap-1 mb-1">
+                      <span className="text-foreground text-3xl font-bold">{activePool.myCalories}</span>
+                      <span className="text-muted-foreground text-sm font-medium">
+                        kcal
+                      </span>
+                    </div>
+                    <span className="text-muted-foreground text-[10px] uppercase font-black tracking-[1.5px] opacity-70">
+                      Calories
+                    </span>
+                  </CardContent>
+                </Card>
               </div>
-              <div className="flex items-baseline gap-1 mb-1">
-                <span className="text-foreground text-3xl font-bold">5.2</span>
-                <span className="text-muted-foreground text-sm font-medium">
-                  km
-                </span>
-              </div>
-              <span className="text-muted-foreground text-[10px] uppercase font-black tracking-[1.5px] opacity-70">
-                Distance
-              </span>
-            </CardContent>
-          </Card>
-          <Card className="flex-1 bg-card border-none shadow-sm">
-            <CardContent className="p-5">
-              <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center mb-4">
-                <Flame size={22} color="#FF8A65" />
-              </div>
-              <div className="flex items-baseline gap-1 mb-1">
-                <span className="text-foreground text-3xl font-bold">450</span>
-                <span className="text-muted-foreground text-sm font-medium">
-                  kcal
-                </span>
-              </div>
-              <span className="text-muted-foreground text-[10px] uppercase font-black tracking-[1.5px] opacity-70">
-                Calories
-              </span>
-            </CardContent>
-          </Card>
-        </div>
+            </>
+          ) : (
+            <Card className="bg-card border-none mb-5 shadow-sm border-dashed border-2 border-muted">
+              <CardContent className="p-8 flex flex-col items-center justify-center text-center">
+                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                  <Footprints size={32} className="text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-bold text-foreground mb-2">No Active Challenges</h3>
+                <p className="text-muted-foreground text-sm mb-6">
+                  Join a pool to start tracking your progress and earning rewards!
+                </p>
+                <Link href="/pools" className="w-full">
+                  <Button variant="outline" className="w-full gap-2">
+                    Browse Pools <ArrowRight size={16} />
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          )
+        ) : (
+          <div className="text-center py-10 text-muted-foreground">
+            <p>Register profile to see activity.</p>
+          </div>
+        )}
       </div>
 
       {/* Start Running Button */}
-      <Link href="/workout" className="w-full block mb-10">
-        <Button className="w-full h-20 rounded-[28px] bg-primary flex items-center justify-center gap-4 shadow-2xl shadow-primary/40 hover:bg-primary/90 transition-all active:scale-[0.98]">
-          <Play size={28} className="text-[#0A0E12] fill-[#0A0E12]" />
-          <span className="text-[#0A0E12] text-2xl font-black uppercase tracking-tight">
-            Start Running
-          </span>
+      {userDataId && activePool ? (
+        <Link href={`/workout?pool=${activePool.id}&type=${activePool.coinType}`} className="w-full block mb-10">
+          <Button className="w-full h-20 rounded-[28px] bg-primary flex items-center justify-center gap-4 shadow-2xl shadow-primary/40 hover:bg-primary/90 transition-all active:scale-[0.98]">
+            <Play size={28} className="text-[#0A0E12] fill-[#0A0E12]" />
+            <span className="text-[#0A0E12] text-2xl font-black uppercase tracking-tight">
+              Run for {activePool.title.length > 15 ? activePool.title.slice(0, 15) + "..." : activePool.title}
+            </span>
+          </Button>
+        </Link>
+      ) : activePool === null && userDataId ? (
+        <Link href="/pools" className="w-full block mb-10">
+          <Button className="w-full h-20 rounded-[28px] bg-secondary flex items-center justify-center gap-4 shadow-2xl shadow-secondary/40 hover:bg-secondary/90 transition-all active:scale-[0.98]">
+            <Trophy size={28} className="text-[#0A0E12]" />
+            <span className="text-[#0A0E12] text-2xl font-black uppercase tracking-tight">
+              Join a Challenge
+            </span>
+          </Button>
+        </Link>
+      ) : (
+        <Button disabled className="w-full h-20 rounded-[28px] bg-muted mb-10 flex items-center justify-center gap-4">
+          <span className="text-muted-foreground text-xl font-bold">Register to Run</span>
         </Button>
-      </Link>
+      )}
 
-      {/* Live Challenges */}
-      <div className="mb-8">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-foreground text-xl font-bold">Live Challenges</h3>
-          <Link href="/pools" className="text-primary text-sm font-medium hover:underline">
-            View all
-          </Link>
-        </div>
-
-        <Card className="bg-card border-none mb-4 overflow-hidden">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-secondary to-primary flex items-center justify-center shadow-lg shadow-secondary/20 shrink-0">
-              <Trophy size={28} className="text-[#0A0E12]" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h4 className="text-foreground font-bold text-base mb-0.5 truncate">
-                Summer Sizzle 10k
-              </h4>
-              <p className="text-muted-foreground text-xs mb-2 truncate">
-                Stake 50 SUI to win from pot
-              </p>
-              <div className="flex items-center">
-                <div className="flex -space-x-2 mr-2">
-                  {[1, 2, 3].map((i) => (
-                    <div
-                      key={i}
-                      className="w-5 h-5 rounded-full border border-card bg-muted overflow-hidden flex items-center justify-center text-[8px] font-bold text-muted-foreground"
-                    >
-                      ?
-                    </div>
-                  ))}
-                </div>
-                <span className="text-muted-foreground text-[10px]">
-                  +420 others
-                </span>
-              </div>
-            </div>
-            <div className="flex flex-col items-end shrink-0">
-              <span className="text-secondary font-bold text-sm">2,500 SUI</span>
-              <span className="text-muted-foreground text-[10px] uppercase font-bold tracking-tighter">
-                Prize Pot
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-none mb-4 overflow-hidden">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-blue-500/20 flex items-center justify-center shrink-0">
-              <Flame size={28} color="#3B82F6" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h4 className="text-foreground font-bold text-base mb-0.5 truncate">
-                Morning Dash 2km
-              </h4>
-              <p className="text-muted-foreground text-xs mb-2 truncate">
-                Daily stake-to-win
-              </p>
-              <div className="flex items-center">
-                <div className="flex -space-x-2 mr-2">
-                  {[4, 5].map((i) => (
-                    <div
-                      key={i}
-                      className="w-5 h-5 rounded-full border border-card bg-muted overflow-hidden flex items-center justify-center text-[8px] font-bold text-muted-foreground"
-                    >
-                      ?
-                    </div>
-                  ))}
-                </div>
-                <span className="text-muted-foreground text-[10px]">
-                  +128 others
-                </span>
-              </div>
-            </div>
-            <div className="flex flex-col items-end shrink-0">
-              <span className="text-blue-500 font-bold text-sm">800 SUI</span>
-              <span className="text-muted-foreground text-[10px] uppercase font-bold tracking-tighter">
-                Prize Pot
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }
